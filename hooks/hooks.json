@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "message",
+            "message": "BigEye Data Observability plugin is active. Available commands: /bigeye, /bigeye-triage, /bigeye-rca, /bigeye-coverage, /bigeye-deploy, /bigeye-incidents. Say /bigeye to get started."
+          }
+        ]
+      }
+    ]
+  }
+}
