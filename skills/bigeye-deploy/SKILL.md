@@ -8,7 +8,7 @@ user-invocable: true
 
 Bulk monitor creation with sensible defaults and a mandatory confirmation gate.
 
-**Before doing anything else**, read `skills/bigeye/references/conventions.md` for tag conventions, output formatting, and defaults.
+**Before doing anything else**, read `skills/bigeye/references/conventions.md` for tag conventions, output formatting, and defaults, and `skills/bigeye/references/scope.md` for how to load and apply the active scope profile.
 
 <HARD-GATE>
 NEVER create monitors without showing the deployment plan and receiving explicit user confirmation.
@@ -26,6 +26,14 @@ Parse `$ARGUMENTS`:
 - `bulk {dimension}`: apply a dimension across all unmonitored columns
 
 ## Procedure
+
+### Step 0: Load Scope
+
+Follow `skills/bigeye/references/scope.md` (Steps A–E) to load the active profile. Parse `--profile <name>`, `--no-scope`, and `--workspace <id>` from `$ARGUMENTS` before parsing the skill's own arguments.
+
+For deploy:
+- If the user named a specific target (`columns {cols}`, `freshness`, `bulk {dim}` against a named table), the scope's table filter does NOT restrict the target — the user's explicit target wins.
+- If the user said `gaps`, deploy only to in-scope tables (iterate over each table from the working profile).
 
 ### Step 1: Build Deployment Plan
 
@@ -57,6 +65,8 @@ Parse `$ARGUMENTS`:
 Show the plan in this exact format and WAIT for user confirmation:
 
 ```
+Scope: {per scope.md Step G}
+
 ## Deploy Plan — {count} monitors on {table_name}
 
 | # | Column | Metric Type | Dimension | Lookback |
@@ -92,6 +102,7 @@ For each row in the confirmed plan, call `mcp__bigeye__create_metric` with:
 - `lookback_interval_type: "DAYS"`
 - `lookback_interval_value: 7` (or user-specified)
 - `schema_name: "{schema}"` (if known)
+- `workspace_id` from the Step 0 map (required so the monitor is created in the right workspace).
 
 Track successes and failures separately.
 

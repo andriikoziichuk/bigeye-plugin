@@ -8,7 +8,9 @@ user-invocable: true
 
 Answers "why is this broken?" — traces an issue through data lineage to find the upstream root cause.
 
-**Before doing anything else**, read `skills/bigeye/references/conventions.md` for severity classification and output formatting.
+**Before doing anything else**, read `skills/bigeye/references/conventions.md` for severity classification and output formatting, and `skills/bigeye/references/scope.md` for how to load and apply the active scope profile.
+
+**RCA special case:** primary issue lookup by ID is ALWAYS unscoped (the user named a specific issue). Scope applies only to the lineage expansion and related-issue search in Steps 3–4. See scope.md Step I for the out-of-scope soft-notice text.
 
 ## Arguments
 
@@ -17,6 +19,12 @@ Parse `$ARGUMENTS`:
 - Empty: run a lightweight triage to find the top critical issue and investigate that
 
 ## Procedure
+
+### Step 0: Load Scope
+
+Follow `skills/bigeye/references/scope.md` (Steps A–E) to load the active profile. Parse `--profile <name>`, `--no-scope`, and `--workspace <id>` from `$ARGUMENTS` before parsing the skill's own arguments.
+
+RCA reminder: the primary issue lookup in Step 1 ignores scope. Scope applies to Steps 3 (lineage expansion) and 4 (related issues only).
 
 ### Step 1: Resolve the Issue
 
@@ -50,6 +58,7 @@ Call `mcp__bigeye__get_issue_lineage_trace` with:
 - `include_root_cause_analysis: true`
 - `include_impact_analysis: true`
 - `max_depth: 5`
+- Plus non-empty scope parameters from Step 0 if the tool's schema accepts them; otherwise post-filter the returned nodes/edges to the in-scope tables only.
 
 From the result, identify:
 - The upstream path from the issue to its root cause
@@ -60,6 +69,8 @@ From the result, identify:
 
 Call `mcp__bigeye__list_related_issues` with `starting_issue_id: {internal_id}`.
 
+Filter the returned list to only include issues whose table/data_source falls inside the working profile (per Step 0 map). Do not apply this filter under `--no-scope`.
+
 Note which related issues have `isRootCause: true`.
 
 ### Step 5: Get Resolution Steps
@@ -69,6 +80,9 @@ Call `mcp__bigeye__get_resolution_steps` with `issue_id: {internal_id}`.
 ### Step 6: Format Output
 
 ```
+Scope: {per scope.md Step G}
+{If the primary issue is outside the working scope, insert the soft notice from scope.md Step I on the next line.}
+
 ## Root Cause Analysis — Issue #{display_name}
 
 ### Issue

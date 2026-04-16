@@ -8,7 +8,7 @@ user-invocable: true
 
 Answers "what's not monitored?" — analyzes dimension coverage across columns and prioritizes gaps.
 
-**Before doing anything else**, read `skills/bigeye/references/conventions.md` for output formatting and severity rules.
+**Before doing anything else**, read `skills/bigeye/references/conventions.md` for output formatting and severity rules, and `skills/bigeye/references/scope.md` for how to load and apply the active scope profile.
 
 ## Arguments
 
@@ -19,11 +19,20 @@ Parse `$ARGUMENTS`:
 
 ## Procedure
 
+### Step 0: Load Scope
+
+Follow `skills/bigeye/references/scope.md` (Steps A–E) to load the active profile. Parse `--profile <name>`, `--no-scope`, and `--workspace <id>` from `$ARGUMENTS` before parsing the skill's own arguments.
+
+For coverage, the scope determines which tables to enumerate:
+- If the profile has non-empty `table_ids` / `table_names`, those are the tables to report on (iterate over each).
+- Otherwise, if `data_source_ids` is non-empty, enumerate tables within those sources and filter to the working profile.
+- Otherwise, fall back to the existing behavior (ask the user for a table name).
+
 ### Step 1: Get Table Dimension Coverage
 
-Call `mcp__bigeye__get_table_dimension_coverage` with `table_name: "{table_name}"`.
+Call `mcp__bigeye__get_table_dimension_coverage` with `table_name: "{table_name}"` for each in-scope table.
 
-If the table name is unknown, call `mcp__bigeye__list_data_sources` first to discover available tables, then ask the user which table to analyze.
+If no in-scope tables are known (empty profile under `--no-scope`), call `mcp__bigeye__list_data_sources` first to discover available tables, then ask the user which table to analyze.
 
 This returns:
 - Overall coverage score (percentage)
@@ -48,6 +57,7 @@ For gap prioritization, fetch past issues:
 Call `mcp__bigeye__list_table_issues` with:
 - `table_name: "{table_name}"`
 - `statuses: ["ISSUE_STATUS_NEW", "ISSUE_STATUS_ACKNOWLEDGED", "ISSUE_STATUS_CLOSED"]`
+- Plus `workspace_id` from the Step 0 map.
 
 Prioritize gaps:
 - **HIGH**: Column had issues in the last 30 days AND has missing dimensions
@@ -59,6 +69,8 @@ If the `dimension` argument was provided, filter the gap list to only show gaps 
 ### Step 5: Format Output
 
 ```
+Scope: {per scope.md Step G}
+
 ## Coverage Report — {schema}.{table_name}
 
 ### Overall Score: {percent}% ({covered} of {total} dimension-column pairs covered)

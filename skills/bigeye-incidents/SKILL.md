@@ -8,7 +8,7 @@ user-invocable: true
 
 Group related issues into incidents, manage existing incidents, and auto-detect issue clusters.
 
-**Before doing anything else**, read `skills/bigeye/references/conventions.md` for status mapping and output formatting.
+**Before doing anything else**, read `skills/bigeye/references/conventions.md` for status mapping and output formatting, and `skills/bigeye/references/scope.md` for how to load and apply the active scope profile.
 
 <HARD-GATE>
 NEVER create or modify incidents without showing the plan and receiving explicit user confirmation.
@@ -24,6 +24,14 @@ Parse `$ARGUMENTS`:
 - `close {id} --label {label}`: close an incident with a closing label
 
 ## Procedure
+
+### Step 0: Load Scope
+
+Follow `skills/bigeye/references/scope.md` (Steps A–E) to load the active profile. Parse `--profile <name>`, `--no-scope`, and `--workspace <id>` from `$ARGUMENTS` before parsing the skill's own arguments.
+
+For incidents:
+- `auto` mode: scope filters the `list_issues` call and the auto-cluster detection — only in-scope issues become candidates.
+- Explicit-ID modes (`{id1} {id2} ...`, `add ... to ...`, `close ...`): IDs provided by the user are honored unconditionally (like RCA's primary lookup). Scope does not hide or reject them.
 
 ### Mode: Merge Specific Issues (`{id1} {id2} ...`)
 
@@ -51,6 +59,8 @@ Auto-generate a descriptive name from the issues:
 **Step 4: Present plan and confirm**
 
 ```
+Scope: {per scope.md Step G}
+
 ## Create Incident — "{generated_name}"
 
 Issues to merge:
@@ -93,6 +103,7 @@ Call `mcp__bigeye__list_issues` with:
 - `statuses: ["ISSUE_STATUS_NEW", "ISSUE_STATUS_ACKNOWLEDGED"]`
 - `compact: false`
 - `max_issues: 50`
+- Plus every non-empty scope parameter from the Step 0 map (`workspace_id`, `data_source_ids`, `table_ids`, `schema_names`, `tags`).
 
 **Step 2: Build relationship graph**
 
@@ -103,6 +114,8 @@ Build clusters: group issues that share any related issue. Two issues are in the
 **Step 3: Present suggested clusters**
 
 ```
+Scope: {per scope.md Step G}
+
 ## Auto-Detected Issue Clusters
 
 ### Cluster 1: "{auto_name}" ({count} issues)

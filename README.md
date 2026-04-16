@@ -17,14 +17,26 @@ Add the marketplace, then install the plugin:
 /plugin install bigeye-plugin@andriikoziichuk-bigeye-plugin
 ```
 
+## Updating
+
+Refresh the marketplace cache, then reinstall to pull the latest version:
+
+```bash
+/plugin marketplace update andriikoziichuk-bigeye-plugin
+/plugin install bigeye-plugin@andriikoziichuk-bigeye-plugin
+```
+
+Your `~/.claude/bigeye-plugin/profiles.json` is preserved across updates — scope profiles do not need to be re-created after upgrading.
+
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | `/bigeye` | Smart router — describe what you need in natural language |
-| `/bigeye-triage` | Prioritized view of active issues |
+| `/bigeye-config [init/show/switch/add/edit/delete]` | Manage scope profiles (workspace + table/source/schema/tag filters) |
+| `/bigeye-triage` | Prioritized view of active issues (scope-filtered) |
 | `/bigeye-rca [issue#]` | Root cause analysis with lineage tracing |
-| `/bigeye-coverage` | Find monitoring gaps across dimensions |
+| `/bigeye-coverage` | Find monitoring gaps across dimensions (scope-filtered) |
 | `/bigeye-deploy [target]` | Deploy monitors with confirmation |
 | `/bigeye-incidents [ids/auto]` | Group related issues into incidents |
 
@@ -40,7 +52,9 @@ This runs triage every morning at 8am, produces a summary, and sends a Slack not
 
 ## Configuration
 
-Edit `skills/bigeye/references/conventions.md` to customize:
+**Scope profiles (per-user):** Run `/bigeye-config init` once after installing the plugin. This creates `~/.claude/bigeye-plugin/profiles.json` with your workspace ID and optional filters (data sources, tables, schemas, tags). Every skill applies the active profile automatically; override per-invocation with `--profile <name>`, `--no-scope`, or `--workspace <id>`.
+
+**Shared conventions:** edit `skills/bigeye/references/conventions.md` to customize:
 - Slack channel and mention groups
 - Severity classification thresholds
 - Output formatting preferences

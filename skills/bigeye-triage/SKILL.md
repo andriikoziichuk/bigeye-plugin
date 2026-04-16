@@ -8,7 +8,7 @@ user-invocable: true
 
 Answers "what's on fire?" — fetches all active issues and presents them prioritized by severity.
 
-**Before doing anything else**, read `skills/bigeye/references/conventions.md` for severity classification rules and output formatting.
+**Before doing anything else**, read `skills/bigeye/references/conventions.md` for severity classification rules and output formatting, and `skills/bigeye/references/scope.md` for how to load and apply the active scope profile.
 
 ## Arguments
 
@@ -20,6 +20,10 @@ Parse `$ARGUMENTS` (space-separated):
 
 ## Procedure
 
+### Step 0: Load Scope
+
+Follow `skills/bigeye/references/scope.md` (Steps A–E) to load the active profile and build the parameter map. Parse and honor `--profile <name>`, `--no-scope`, and `--workspace <id>` flags from `$ARGUMENTS` before parsing the skill's own arguments.
+
 ### Step 1: Fetch Active Issues
 
 Call `mcp__bigeye__list_issues` with:
@@ -27,8 +31,9 @@ Call `mcp__bigeye__list_issues` with:
   - If argument is `new`, use only `["ISSUE_STATUS_NEW"]`
 - `compact`: `false` (we need metric info for severity classification)
 - `max_issues`: `50` (or user-specified override)
+- Plus every non-empty scope parameter from the Step 0 map (`workspace_id`, `data_source_ids`, `table_ids`, `schema_names`, `tags`).
 
-If no issues returned, report "No active issues — all clear." and stop.
+If no issues returned, print the empty-result message per scope.md Step H (`No active issues in scope '{profile}' — all clear.` or `No active issues — all clear.` under `--no-scope`) and stop.
 
 ### Step 2: Classify Severity
 
@@ -60,6 +65,8 @@ Count related issues per issue. If any issue has 2+ related issues, flag it as a
 Use this exact format:
 
 ```
+Scope: {per scope.md Step G}
+
 ## BigEye Triage — {today's date}
 
 ### Critical ({count} issues)
