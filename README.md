@@ -13,7 +13,7 @@ A Claude Code plugin for managing BigEye monitoring at scale. Simplifies triage,
 Install directly from the project directory:
 
 ```bash
-claude plugins install /path/to/bigeye-plugin
+claude plugins install https://github.com/andriikoziichuk/bigeye-plugin.git
 ```
 
 Or add to your Claude Code settings as a local plugin.
