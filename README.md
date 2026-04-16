@@ -10,13 +10,12 @@ A Claude Code plugin for managing BigEye monitoring at scale. Simplifies triage,
 
 ## Installation
 
-Install directly from the project directory:
+Add the marketplace, then install the plugin:
 
 ```bash
-claude plugins install https://github.com/andriikoziichuk/bigeye-plugin.git
+/plugin marketplace add andriikoziichuk/bigeye-plugin
+/plugin install bigeye-plugin@andriikoziichuk-bigeye-plugin
 ```
-
-Or add to your Claude Code settings as a local plugin.
 
 ## Commands
 
