@@ -48,7 +48,7 @@ Enumerate metrics on the table via CLI per `cli.md` Step C:
 ```bash
 TMPDIR=$(mktemp -d -t bigeye-XXXXXX)
 trap 'rm -rf "$TMPDIR"' EXIT
-bigeye -w <profile> catalog get-metric-info -tn <table_name> -op "$TMPDIR"
+bigeye -w <profile> catalog get-metric-info -tid <table_id> -op "$TMPDIR"
 ```
 
 Read every JSON file in `$TMPDIR`. For each metric, score against **all** heuristics in `improve.md` §2 (not just the cheap subset). For `HIGH_FALSE_POSITIVE_RATE`, additionally fetch issue history via:
