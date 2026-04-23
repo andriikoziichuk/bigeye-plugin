@@ -8,7 +8,7 @@ user-invocable: true
 
 Answers "what's not monitored?" — analyzes dimension coverage across columns and prioritizes gaps.
 
-**Before doing anything else**, read `skills/bigeye/references/conventions.md` for output formatting and severity rules, and `skills/bigeye/references/scope.md` for how to load and apply the active scope profile.
+**Before doing anything else**, read `skills/bigeye/references/conventions.md` for output formatting and severity rules, and `skills/bigeye/references/scope.md` for how to load and apply the active scope profile, and skills/bigeye/references/cli.md for CLI invocation rules and MCP-availability detection.
 
 ## Arguments
 
@@ -21,7 +21,7 @@ Parse `$ARGUMENTS`:
 
 ### Step 0: Load Scope
 
-Follow `skills/bigeye/references/scope.md` (Steps A–E) to load the active profile. Parse `--profile <name>`, `--no-scope`, and `--workspace <id>` from `$ARGUMENTS` before parsing the skill's own arguments.
+Follow `skills/bigeye/references/scope.md` (Steps A–E) to load the active profile. Parse `--profile <name>`, `--no-scope`, and `--workspace <id>` from `$ARGUMENTS` before parsing the skill's own arguments. Then follow cli.md Step B to detect MCP availability (sets MCP_AVAILABLE).
 
 For coverage, the scope determines which tables to enumerate:
 - If the profile has non-empty `table_ids` / `table_names`, those are the tables to report on (iterate over each).
@@ -29,6 +29,9 @@ For coverage, the scope determines which tables to enumerate:
 - Otherwise, fall back to the existing behavior (ask the user for a table name).
 
 ### Step 1: Get Table Dimension Coverage
+
+If `MCP_AVAILABLE=false`:
+  Print the `cli.md` Step F warning with `{feature_name}=dimension coverage scoring` and `{CLI-only workaround}=Coverage scoring has no CLI equivalent. Enable MCP via bigeye-mcp-install.md. You can still see which columns have monitors via `bigeye -w <profile> catalog get-metric-info -tid <id> -op <tmp>`, but dimension-level coverage requires MCP.` Stop the skill.
 
 Call `mcp__bigeye__get_table_dimension_coverage` with `table_name: "{table_name}"` for each in-scope table.
 
@@ -42,9 +45,15 @@ This returns:
 
 ### Step 2: Get Dimension Taxonomy
 
+If `MCP_AVAILABLE=false`:
+  Print the `cli.md` Step F warning with `{feature_name}=dimension coverage scoring` and `{CLI-only workaround}=Coverage scoring has no CLI equivalent. Enable MCP via bigeye-mcp-install.md. You can still see which columns have monitors via `bigeye -w <profile> catalog get-metric-info -tid <id> -op <tmp>`, but dimension-level coverage requires MCP.` Stop the skill.
+
 Call `mcp__bigeye__list_dimensions` to get the full list of dimensions and their categories (PIPELINE_RELIABILITY vs DATA_QUALITY).
 
 ### Step 3: Get Column-Level Detail (if specific columns requested)
+
+If `MCP_AVAILABLE=false`:
+  Print the `cli.md` Step F warning with `{feature_name}=dimension coverage scoring` and `{CLI-only workaround}=Coverage scoring has no CLI equivalent. Enable MCP via bigeye-mcp-install.md. You can still see which columns have monitors via `bigeye -w <profile> catalog get-metric-info -tid <id> -op <tmp>`, but dimension-level coverage requires MCP.` Stop the skill.
 
 If the user specified columns via `columns {col1},{col2}`:
 Call `mcp__bigeye__get_column_dimension_coverage` with:
@@ -53,11 +62,17 @@ Call `mcp__bigeye__get_column_dimension_coverage` with:
 
 ### Step 4: Prioritize Gaps
 
-For gap prioritization, fetch past issues:
-Call `mcp__bigeye__list_table_issues` with:
-- `table_name: "{table_name}"`
-- `statuses: ["ISSUE_STATUS_NEW", "ISSUE_STATUS_ACKNOWLEDGED", "ISSUE_STATUS_CLOSED"]`
-- Plus `workspace_id` from the Step 0 map.
+Fetch past issues via CLI:
+```bash
+TMPDIR=$(mktemp -d -t bigeye-XXXXXX)
+trap 'rm -rf "$TMPDIR"' EXIT
+bigeye -w <profile> issues get-issues \
+  {per in-scope warehouse_id: -wid <id>} \
+  {per in-scope schema: -sn <name>} \
+  -op "$TMPDIR"
+```
+
+Read JSON files; filter to issues whose `tableName` matches the current table; keep `NEW`, `ACKNOWLEDGED`, and `CLOSED` (for the 30-day history).
 
 Prioritize gaps:
 - **HIGH**: Column had issues in the last 30 days AND has missing dimensions

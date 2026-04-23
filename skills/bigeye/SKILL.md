@@ -1,6 +1,6 @@
 ---
 name: bigeye
-description: Use when the user mentions BigEye, data quality issues, monitoring gaps, data freshness, monitor coverage, issue triage, root cause analysis, or when BigEye MCP tools are being used in conversation. Routes to the appropriate BigEye sub-skill.
+description: Use when the user mentions BigEye, data quality issues, monitoring gaps, data freshness, monitor coverage, issue triage, root cause analysis, or when BigEye CLI or MCP tools are being used in conversation. Routes to the appropriate BigEye sub-skill.
 user-invocable: true
 ---
 
@@ -8,7 +8,7 @@ user-invocable: true
 
 Central entry point for all BigEye monitoring workflows. Routes to the right sub-skill based on user intent.
 
-**Before doing anything else**, read `skills/bigeye/references/conventions.md` for shared formatting and severity rules, and `skills/bigeye/references/scope.md` for how to apply the user's active scope profile.
+**Before doing anything else**, read `skills/bigeye/references/conventions.md` for shared formatting and severity rules, and `skills/bigeye/references/scope.md` for how to apply the user's active scope profile, and skills/bigeye/references/cli.md for CLI invocation rules and MCP-availability detection.
 
 ## Available Skills
 
@@ -28,6 +28,7 @@ Parse the user's input and invoke the matching sub-skill using the Skill tool:
 | User intent | Invoke |
 |-------------|--------|
 | "set up", "configure", "change workspace", "switch profile", "first run" | Skill: `bigeye-config` |
+| "verify setup", "check config", "is MCP working", "test connection" | Skill: `bigeye-config` with args `verify` |
 | "what's broken?", "show active issues", "what's on fire", "triage", "status" | Skill: `bigeye-triage` |
 | "why is issue X failing?", "what caused this?", "root cause", "trace", "debug" | Skill: `bigeye-rca` with issue reference as args |
 | "what's not monitored?", "find gaps", "coverage", "missing monitors" | Skill: `bigeye-coverage` |

@@ -7,7 +7,7 @@
     {
       "name": "bigeye-plugin",
       "description": "BigEye data observability plugin for Claude Code — triage, RCA, coverage, deploy, and incident management.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "source": {
         "source": "github",
         "repo": "andriikoziichuk/bigeye-plugin"

@@ -22,6 +22,8 @@ Scope config at ~/.claude/bigeye-plugin/profiles.json is malformed:
 Run `/bigeye-config init` to recreate it.
 ```
 
+If the loaded profile contains a non-empty `tags` field, strip it from the working copy in memory. Print once per session: *"Note: `tags` filter removed in this plugin release — stripping from profile `<name>` on read. Next `/bigeye-config edit <name>` will rewrite without the field."* Do not modify the file on disk until the wizard rewrites it.
+
 ## Step B: Select the Active Profile
 
 1. Parse `$ARGUMENTS` for these flags (in addition to each skill's own arguments). Remove them from the argument list before the skill processes its own args:
@@ -45,7 +47,7 @@ Run `/bigeye-config init` to recreate it.
 ## Step C: Apply Override Flags
 
 - `--workspace <id>` replaces `workspace_id` in the working profile.
-- `--no-scope` clears `data_source_ids`, `table_ids`, `table_names`, `schema_names`, and `tags` in the working profile (workspace_id stays).
+- `--no-scope` clears `data_source_ids`, `table_ids`, `table_names`, and `schema_names` in the working profile (workspace_id stays).
 - `--profile` only affected *which* profile was loaded in Step B; no further action here.
 
 These flags compose: a command may combine any of them.
@@ -61,9 +63,9 @@ If the working profile has non-empty `table_names`:
 
 Do this **once** per invocation — not before every MCP call.
 
-## Step E: Build the MCP Parameter Map
+## Step E: Build the Parameter Map
 
-When calling `mcp__bigeye__list_issues` or any tool that accepts these parameters, include only the non-empty fields from the working profile:
+When calling any MCP tool that accepts these parameters (see `cli.md` Step E for the routing table), include only the non-empty fields from the working profile. For CLI calls, use the equivalent CLI flags per `cli.md` Step C (`-wid` for `data_source_ids`, `-sn` for `schema_names`, etc.).
 
 | Profile field | MCP parameter name |
 |---|---|
@@ -71,7 +73,6 @@ When calling `mcp__bigeye__list_issues` or any tool that accepts these parameter
 | `data_source_ids` | `data_source_ids` (if the MCP tool instead uses `source_ids`, use that name — pick whichever the tool's schema accepts) |
 | `table_ids` (including resolved table_names) | `table_ids` |
 | `schema_names` | `schema_names` |
-| `tags` | `tags` |
 
 Omit any parameter whose field is empty.
 
@@ -86,13 +87,17 @@ Omit any parameter whose field is empty.
 | `bigeye-rca` | Primary issue lookup (by ID) is **unscoped**. Scope applies only to lineage expansion and related-issue search |
 | `bigeye-morning-report` (agent) | Same as triage — fully scoped |
 
+## Step F.1: CLI parameter binding
+
+When invoking the `bigeye` CLI, pass `-w <profile_name>` so the CLI resolves its workspace section. See `cli.md` Step A for the full binding rule and `cli.md` Step E for which operations use CLI vs MCP.
+
 ## Step G: Print the Scope Header
 
 Every skill's output MUST start with a single line `Scope:` header before any other content.
 
 **Normal case:**
 ```
-Scope: profile={name} · workspace={id} · sources={count} · tables={count} · schemas={count} · tags={count}
+Scope: profile={name} · workspace={id} · sources={count} · tables={count} · schemas={count}
 ```
 
 Omit any facet that is zero. Example with nothing set: `Scope: profile=full-view · workspace=42`

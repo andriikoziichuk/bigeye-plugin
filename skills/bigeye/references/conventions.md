@@ -146,6 +146,17 @@ Related: {related_count} issues
 
 ## Closing Labels
 
-When closing issues, use one of:
-- `METRIC_RUN_LABEL_TRUE_NEGATIVE`: Real issue, now resolved
-- `METRIC_RUN_LABEL_FALSE_POSITIVE`: Not a real issue (noisy monitor)
+When closing issues via the CLI (`bigeye issues update-issue -cl <label>`), use one of:
+- `TRUE_POSITIVE`: Real issue, now resolved
+- `FALSE_POSITIVE`: Not a real issue (noisy monitor)
+- `EXPECTED`: Known exception — expected behavior, not an actual issue
+
+Skills that accept a user-facing shorthand flag (`--label`) MUST remap it to the CLI label as follows:
+
+| Shorthand | CLI label |
+|---|---|
+| `true-negative` | `TRUE_POSITIVE` |
+| `false-positive` | `FALSE_POSITIVE` |
+| `expected` | `EXPECTED` |
+
+(The `true-negative` → `TRUE_POSITIVE` mapping is intentional: what the plugin previously called a "true negative" is what the CLI calls a "true positive" — the flag name is kept for backward compatibility with prior plugin versions.)

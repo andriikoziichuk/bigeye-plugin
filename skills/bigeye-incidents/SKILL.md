@@ -8,7 +8,7 @@ user-invocable: true
 
 Group related issues into incidents, manage existing incidents, and auto-detect issue clusters.
 
-**Before doing anything else**, read `skills/bigeye/references/conventions.md` for status mapping and output formatting, and `skills/bigeye/references/scope.md` for how to load and apply the active scope profile.
+**Before doing anything else**, read `skills/bigeye/references/conventions.md` for status mapping and output formatting, and `skills/bigeye/references/scope.md` for how to load and apply the active scope profile, and skills/bigeye/references/cli.md for CLI invocation rules and MCP-availability detection.
 
 <HARD-GATE>
 NEVER create or modify incidents without showing the plan and receiving explicit user confirmation.
@@ -22,12 +22,13 @@ Parse `$ARGUMENTS`:
 - `auto`: auto-detect clusters from open issues and suggest groupings
 - `add {id} to {incident_id}`: add an issue to an existing incident
 - `close {id} --label {label}`: close an incident with a closing label
+- `--internal-id`: treat all numeric arguments in this invocation as internal IDs instead of display names. Required when MCP is unavailable (display-name lookup needs MCP).
 
 ## Procedure
 
 ### Step 0: Load Scope
 
-Follow `skills/bigeye/references/scope.md` (Steps A–E) to load the active profile. Parse `--profile <name>`, `--no-scope`, and `--workspace <id>` from `$ARGUMENTS` before parsing the skill's own arguments.
+Follow `skills/bigeye/references/scope.md` (Steps A–E) to load the active profile. Parse `--profile <name>`, `--no-scope`, and `--workspace <id>` from `$ARGUMENTS` before parsing the skill's own arguments. Then follow cli.md Step B to detect MCP availability (sets MCP_AVAILABLE).
 
 For incidents:
 - `auto` mode: scope filters the `list_issues` call and the auto-cluster detection — only in-scope issues become candidates.
@@ -37,18 +38,29 @@ For incidents:
 
 **Step 1: Resolve issue IDs**
 
-For each display name provided, call `mcp__bigeye__search_issues` with `name_query: "{display_name}"`.
+If `--internal-id` was passed, treat the given number(s) as internal IDs directly.
+
+Otherwise, if `MCP_AVAILABLE=true`:
+  Call `mcp__bigeye__search_issues` with `name_query: "{display_name}"` to resolve each display name to an internal ID.
+
+Otherwise (MCP absent and no `--internal-id`):
+  Print the `cli.md` Step F warning with `{feature_name}=display-name lookup` and `{CLI-only workaround}=Re-run with --internal-id`. Stop the skill.
+
 Collect internal IDs. If any name doesn't resolve, report it and ask the user to correct.
 
 At least 2 issue IDs are required for a new incident.
 
 **Step 2: Validate relationship**
 
-For the first issue, call `mcp__bigeye__list_related_issues` with `starting_issue_id: {first_id}`.
-Check if the other issues appear in the related list.
+If `MCP_AVAILABLE=false`:
+  Print the `cli.md` Step F warning with `{feature_name}=relationship validation` and continue without validation. Skip to Step 3.
 
-If issues are NOT related via lineage, warn the user:
-"These issues don't appear to be related through data lineage. They may still belong to the same incident if they share a common cause. Proceed anyway? (y/n)"
+If `MCP_AVAILABLE=true`:
+  For the first issue, call `mcp__bigeye__list_related_issues` with `starting_issue_id: {first_id}`.
+  Check if the other issues appear in the related list.
+
+  If issues are NOT related via lineage, warn the user:
+  "These issues don't appear to be related through data lineage. They may still belong to the same incident if they share a common cause. Proceed anyway? (y/n)"
 
 **Step 3: Generate incident name**
 
@@ -75,6 +87,9 @@ Wait for confirmation.
 
 **Step 5: Create incident**
 
+If `MCP_AVAILABLE=false`:
+  Print the `cli.md` Step F warning with `{feature_name}=incident creation`. Stop — no CLI equivalent exists.
+
 Call `mcp__bigeye__create_incident` with:
 - `issue_ids: [{internal_id_1}, {internal_id_2}, ...]`
 - `incident_name: "{generated_name}"`
@@ -99,17 +114,28 @@ Downstream impact: {related_count} issues
 
 **Step 1: Fetch open issues**
 
-Call `mcp__bigeye__list_issues` with:
-- `statuses: ["ISSUE_STATUS_NEW", "ISSUE_STATUS_ACKNOWLEDGED"]`
-- `compact: false`
-- `max_issues: 50`
-- Plus every non-empty scope parameter from the Step 0 map (`workspace_id`, `data_source_ids`, `table_ids`, `schema_names`, `tags`).
+Use CLI per `cli.md` Step C:
+
+```bash
+TMPDIR=$(mktemp -d -t bigeye-XXXXXX)
+trap 'rm -rf "$TMPDIR"' EXIT
+bigeye -w <profile> issues get-issues \
+  {if data_source_ids non-empty: for each id, append `-wid <id>`} \
+  {if schema_names non-empty: for each name, append `-sn <name>`} \
+  -op "$TMPDIR"
+```
+
+Read each JSON file in `$TMPDIR`; filter in-memory to `status in {ISSUE_STATUS_NEW, ISSUE_STATUS_ACKNOWLEDGED}`; cap at 50.
 
 **Step 2: Build relationship graph**
 
-For each issue, call `mcp__bigeye__list_related_issues` with `starting_issue_id: {id}`.
+If `MCP_AVAILABLE=false`:
+  Print the `cli.md` Step F warning with `{feature_name}=cluster auto-detection`. Stop — *"Cannot auto-detect clusters without MCP — see bigeye-mcp-install.md."*
 
-Build clusters: group issues that share any related issue. Two issues are in the same cluster if they share at least one related issue (transitive closure).
+If `MCP_AVAILABLE=true`:
+  For each issue, call `mcp__bigeye__list_related_issues` with `starting_issue_id: {id}`.
+
+  Build clusters: group issues that share any related issue. Two issues are in the same cluster if they share at least one related issue (transitive closure).
 
 **Step 3: Present suggested clusters**
 
@@ -140,18 +166,37 @@ Create incidents for these clusters? (all/1,2/none)
 
 ### Mode: Add to Existing (`add {id} to {incident_id}`)
 
-1. Resolve both display names to internal IDs via `mcp__bigeye__search_issues`
-2. Call `mcp__bigeye__create_incident` with `issue_ids: [{issue_id}]`, `existing_incident_id: {incident_internal_id}`
+1. Resolve both display names to internal IDs:
+
+   If `--internal-id` was passed, treat the given number(s) as internal IDs directly.
+
+   Otherwise, if `MCP_AVAILABLE=true`:
+     Call `mcp__bigeye__search_issues` with `name_query: "{display_name}"` to resolve each display name to an internal ID.
+
+   Otherwise (MCP absent and no `--internal-id`):
+     Print the `cli.md` Step F warning with `{feature_name}=display-name lookup` and `{CLI-only workaround}=Re-run with --internal-id`. Stop the skill.
+
+2. If `MCP_AVAILABLE=false`:
+     Print the `cli.md` Step F warning with `{feature_name}=incident creation`. Stop — no CLI equivalent exists.
+
+   Call `mcp__bigeye__create_incident` with `issue_ids: [{issue_id}]`, `existing_incident_id: {incident_internal_id}`
 3. Report result
 
 ### Mode: Close (`close {id} --label {label}`)
 
-1. Resolve display name to internal ID
-2. Map label shorthand to API value:
-   - `true-negative` → `METRIC_RUN_LABEL_TRUE_NEGATIVE`
-   - `false-positive` → `METRIC_RUN_LABEL_FALSE_POSITIVE`
-3. Call `mcp__bigeye__update_issue` with:
-   - `issue_id: {internal_id}`
-   - `new_status: "ISSUE_STATUS_CLOSED"`
-   - `closing_label: "{mapped_label}"`
-4. Report result
+1. If `--internal-id` was passed, treat `{id}` as internal ID directly. Otherwise resolve via MCP `search_issues` (MCP required — hard-fail with the standard warning if absent).
+2. Map the shorthand label to the CLI label (see `conventions.md` Closing Labels section):
+   - `--label true-negative` → `TRUE_POSITIVE`
+   - `--label false-positive` → `FALSE_POSITIVE`
+   - `--label expected` → `EXPECTED`
+3. Invoke CLI:
+   ```bash
+   bigeye -w <profile> issues update-issue \
+     -iid <internal_id> \
+     -status CLOSED \
+     -cl <mapped_label>
+   ```
+4. On non-zero exit, follow `cli.md` Step G. On success, print:
+   ```
+   Issue #<display_or_internal_id> closed with label <mapped_label>.
+   ```

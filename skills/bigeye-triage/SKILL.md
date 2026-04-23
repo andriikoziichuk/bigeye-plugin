@@ -8,7 +8,7 @@ user-invocable: true
 
 Answers "what's on fire?" — fetches all active issues and presents them prioritized by severity.
 
-**Before doing anything else**, read `skills/bigeye/references/conventions.md` for severity classification rules and output formatting, and `skills/bigeye/references/scope.md` for how to load and apply the active scope profile.
+**Before doing anything else**, read `skills/bigeye/references/conventions.md` for severity classification rules and output formatting, `skills/bigeye/references/scope.md` for how to load and apply the active scope profile, and `skills/bigeye/references/cli.md` for CLI invocation rules and MCP-availability detection.
 
 ## Arguments
 
@@ -22,18 +22,30 @@ Parse `$ARGUMENTS` (space-separated):
 
 ### Step 0: Load Scope
 
-Follow `skills/bigeye/references/scope.md` (Steps A–E) to load the active profile and build the parameter map. Parse and honor `--profile <name>`, `--no-scope`, and `--workspace <id>` flags from `$ARGUMENTS` before parsing the skill's own arguments.
+Follow `skills/bigeye/references/scope.md` (Steps A–E) to load the active profile. Parse and honor `--profile <name>`, `--no-scope`, and `--workspace <id>` flags from `$ARGUMENTS` before parsing the skill's own arguments. Then follow `cli.md` Step B to detect MCP availability (sets `MCP_AVAILABLE`).
 
 ### Step 1: Fetch Active Issues
 
-Call `mcp__bigeye__list_issues` with:
-- `statuses`: `["ISSUE_STATUS_NEW", "ISSUE_STATUS_ACKNOWLEDGED"]`
-  - If argument is `new`, use only `["ISSUE_STATUS_NEW"]`
-- `compact`: `false` (we need metric info for severity classification)
-- `max_issues`: `50` (or user-specified override)
-- Plus every non-empty scope parameter from the Step 0 map (`workspace_id`, `data_source_ids`, `table_ids`, `schema_names`, `tags`).
+Use CLI per `cli.md` Step C:
 
-If no issues returned, print the empty-result message per scope.md Step H (`No active issues in scope '{profile}' — all clear.` or `No active issues — all clear.` under `--no-scope`) and stop.
+```bash
+TMPDIR=$(mktemp -d -t bigeye-XXXXXX)
+trap 'rm -rf "$TMPDIR"' EXIT
+bigeye -w <profile> issues get-issues \
+  {if data_source_ids non-empty: for each id, append `-wid <id>`} \
+  {if schema_names non-empty: for each name, append `-sn <name>`} \
+  -op "$TMPDIR"
+```
+
+Parse each JSON file in `$TMPDIR`. Filter in-memory:
+- Keep only issues whose `status` is `ISSUE_STATUS_NEW` or `ISSUE_STATUS_ACKNOWLEDGED`.
+- If the `new` argument was supplied, keep only `ISSUE_STATUS_NEW`.
+- If the `24h` argument was supplied, keep only issues with `openedAt` within the last 24 hours.
+- Cap at `max_issues` (50 by default, or the user's override).
+
+If the filtered list is empty, print the empty-result message per `scope.md` Step H and stop.
+
+Note: the CLI has no `--tag` filter; scope tags are no longer supported.
 
 ### Step 2: Classify Severity
 
@@ -56,9 +68,11 @@ For each issue, apply the severity rules from conventions.md:
 
 ### Step 3: Detect Issue Clusters
 
-For each Critical and Warning issue, call `mcp__bigeye__list_related_issues` with `starting_issue_id: <issue_id>`.
+If `MCP_AVAILABLE=true`:
+  For each Critical and Warning issue, call `mcp__bigeye__list_related_issues` with `starting_issue_id: <issue_id>`. Count related issues per issue. Flag any with 2+ related as a cluster.
 
-Count related issues per issue. If any issue has 2+ related issues, flag it as a cluster.
+If `MCP_AVAILABLE=false`:
+  Print the `cli.md` Step F warning with `{feature_name}=cluster detection`. Set `cluster_count=null` for the output. Do not call MCP.
 
 ### Step 4: Format Output
 
@@ -89,6 +103,8 @@ Scope: {per scope.md Step G}
 ```
 
 If a severity section has 0 issues, omit that section entirely.
+
+If `cluster_count` is null (MCP absent), replace the `{cluster_count} issue clusters detected (potential shared root cause)` line in the Summary with: `Cluster detection disabled — MCP not configured (see bigeye-mcp-install.md).`
 
 ### Step 5: Suggest Next Actions
 

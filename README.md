@@ -5,8 +5,15 @@ A Claude Code plugin for managing BigEye monitoring at scale. Simplifies triage,
 ## Requirements
 
 - Claude Code with plugin support
-- BigEye MCP server configured and authenticated
+- **Bigeye CLI 0.7+** installed and authenticated — see [`bigeye-cli-install.md`](bigeye-cli-install.md)
+- **Bigeye MCP server** (optional; unlocks RCA lineage, coverage scoring, incident creation, cluster detection, display-name lookup, and tag tracking) — see [`bigeye-mcp-install.md`](bigeye-mcp-install.md)
 - Slack MCP server (optional, for morning report notifications)
+
+## How it works
+
+Every BigEye skill uses the CLI as its primary transport. If the MCP server is also configured, advanced features (lineage, clustering, coverage scoring, incidents) become available transparently. If MCP is not configured, skills still run — affected features print a one-line note pointing at `bigeye-mcp-install.md`.
+
+Run `/bigeye-config verify` at any time to see which features are enabled.
 
 ## Installation
 

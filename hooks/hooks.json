@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "message",
-            "message": "BigEye Data Observability plugin is active. Available commands: /bigeye, /bigeye-triage, /bigeye-rca, /bigeye-coverage, /bigeye-deploy, /bigeye-incidents. Say /bigeye to get started."
+            "message": "BigEye Data Observability plugin is active. CLI: required. MCP: optional (enables lineage, coverage, incidents). Run /bigeye-config verify to check setup, or /bigeye to get started."
           }
         ]
       }
