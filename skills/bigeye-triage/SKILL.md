@@ -13,7 +13,7 @@ Answers "what's on fire?" — fetches all active issues and presents them priori
 ## Arguments
 
 Parse `$ARGUMENTS` (space-separated):
-- Empty or no args: show all open issues (NEW + ACKNOWLEDGED)
+- Empty or no args: show all open issues (NEW + ACKNOWLEDGED + MONITORING)
 - `new`: only NEW status issues (unacknowledged)
 - `24h`: issues opened in the last 24 hours only
 - A number like `50`: override max_issues limit
@@ -38,7 +38,7 @@ bigeye -w <profile> issues get-issues \
 ```
 
 Parse each JSON file in `$TMPDIR`. Filter in-memory:
-- Keep only issues whose `status` is `ISSUE_STATUS_NEW` or `ISSUE_STATUS_ACKNOWLEDGED`.
+- Keep only issues whose `status` is `ISSUE_STATUS_NEW`, `ISSUE_STATUS_ACKNOWLEDGED`, or `ISSUE_STATUS_MONITORING`.
 - If the `new` argument was supplied, keep only `ISSUE_STATUS_NEW`.
 - If the `24h` argument was supplied, keep only issues with `openedAt` within the last 24 hours.
 - Cap at `max_issues` (50 by default, or the user's override).
@@ -76,7 +76,7 @@ If `MCP_AVAILABLE=false`:
 
 ### Step 4: Format Output
 
-Use this exact format:
+Use this exact format. Sort rows within each severity by `priorityScore` descending. Status is the mapped display name per `conventions.md` (New / Ack'd / Monitoring).
 
 ```
 Scope: {per scope.md Step G}
@@ -84,23 +84,33 @@ Scope: {per scope.md Step G}
 ## BigEye Triage — {today's date}
 
 ### Critical ({count} issues)
-| # | Issue | Dimension | Column | Since | Related |
-|---|-------|-----------|--------|-------|---------|
-| 1 | {display_name} | {dimension} | {column or "—"} | {time_ago} | {related_count} related |
+| # | Issue | Status | Score | Dim | Table | Column | Metric (type) | Since | Alerts | First run |
+|---|-------|--------|-------|-----|-------|--------|---------------|-------|--------|-----------|
+| 1 | {display_name} | {status} | {priorityScore} | {dimension} | {tableName} | {columnName or "—"} | {metricName} ({metricType}) | {time_ago} | {alertCount} | {firstMetricRunStatus short form} |
 
 ### Warning ({count} issues)
-| # | Issue | Dimension | Column | Since | Related |
-|---|-------|-----------|--------|-------|---------|
+| # | Issue | Status | Score | Dim | Table | Column | Metric (type) | Since | Alerts | First run |
+|---|-------|--------|-------|-----|-------|--------|---------------|-------|--------|-----------|
 
 ### Low ({count} issues)
-| # | Issue | Dimension | Column | Since | Related |
-|---|-------|-----------|--------|-------|---------|
+| # | Issue | Status | Score | Dim | Table | Column | Metric (type) | Since | Alerts | First run |
+|---|-------|--------|-------|-----|-------|--------|---------------|-------|--------|-----------|
 
 ### Summary
 - {critical} critical, {warning} warning, {low} low
 - {cluster_count} issue clusters detected (potential shared root cause)
 - Suggested next: `/bigeye-rca {top_critical_issue}` for the top critical issue
 ```
+
+Column sourcing:
+- **Status** — `currentStatus` mapped per `conventions.md` Status Display Mapping
+- **Score** — `priorityScore` (0–100 from BigEye)
+- **Dim** — `metricConfiguration.dimension.displayName`
+- **Table** — `metricMetadata.datasetName`
+- **Column** — `metricMetadata.fieldName` or `—` for table-level metrics
+- **Metric (type)** — `metricConfiguration.name` then the metric type in parentheses: prefer `metricConfiguration.metricType.predefinedMetric.metricName`; fall back to `metricConfiguration.metricType.templateMetric.aggregationType`; else `—`
+- **Alerts** — `alertCount`
+- **First run** — `firstMetricRunStatus` with the `METRIC_RUN_STATUS_` prefix stripped (e.g. `LOWERBOUND_CRITICAL`, `GROUPS_CRITICAL`). For `GROUPS_CRITICAL`, append `(N/M)` when the summary exposes the ratio.
 
 If a severity section has 0 issues, omit that section entirely.
 
