@@ -81,6 +81,17 @@ Prioritize gaps:
 
 If the `dimension` argument was provided, filter the gap list to only show gaps for that dimension.
 
+### Step 4b: Cheap weak-monitor scan
+
+Using the monitor definitions already fetched in Step 1 and the issue history from Step 4, apply the "cheap" subset of the heuristics catalog in `skills/bigeye/references/improve.md` §2 (the rows with `Cheap? = yes`):
+
+- `REGEX_PERMISSIVE` — pattern is in `{".+", ".*", ".+@.+", "[A-Za-z0-9]+"}`
+- `LOOKBACK_MISSING` — no lookback or lookback_window = 0
+- `SCHEDULE_MISSING` — no schedule configured
+- `HIGH_FALSE_POSITIVE_RATE` — 3+ `FALSE_POSITIVE` closures in the last 30 days for this metric
+
+Collect findings into `improvable_count` and a list `(metric_id, column, one-sentence reason)`. Do NOT fetch additional data — this step re-uses data already in hand from Steps 1 and 4.
+
 ### Step 5: Format Output
 
 ```
@@ -108,6 +119,13 @@ Scope: {per scope.md Step G}
 
 {Show top 20 columns. If more gaps exist, note "... and N more columns with gaps."}
 
+### Improvable Monitors ({improvable_count})
+{Only print this section when improvable_count > 0.}
+- Metric #{metric_id} on {column or "table-level"}: {one-sentence reason}
+{... up to 5 lines total}
+{If improvable_count > 5:}
+... and {improvable_count - 5} more.
+
 ### Suggested Monitor Deployment
 {count} monitors recommended to close high-priority gaps:
 - {N} {Dimension} monitors ({column_list})
@@ -116,4 +134,5 @@ Scope: {per scope.md Step G}
 
 -> Run `/bigeye-deploy gaps` to deploy all suggested monitors
 -> Run `/bigeye-deploy gaps --priority high` for high-priority only
+-> Run `/bigeye-improve {table_name}` for deep monitor recommendations (incl. weak-regex tightening, threshold tuning, distribution-aware suggestions)
 ```

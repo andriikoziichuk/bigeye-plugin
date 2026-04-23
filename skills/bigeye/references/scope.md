@@ -86,6 +86,8 @@ Omit any parameter whose field is empty.
 | `bigeye-incidents` | Issue listing + auto-cluster detection — fully scoped |
 | `bigeye-rca` | Primary issue lookup (by ID) is **unscoped**. Scope applies only to lineage expansion and related-issue search |
 | `bigeye-morning-report` (agent) | Same as triage — fully scoped |
+| `bigeye-ticket` | Primary issue lookup is **unscoped** (user named a specific issue). Scope applies only to MCP lineage/related calls for `{{downstream_tables}}` / `{{related_issues}}` |
+| `bigeye-improve` | Table argument is unscoped when named explicitly. Scope applies to MCP profile/coverage calls if their schema accepts filters; no table-list enumeration (user always names one, or the profile resolves to a single in-scope table) |
 
 ## Step F.1: CLI parameter binding
 

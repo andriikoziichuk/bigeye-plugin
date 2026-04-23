@@ -112,3 +112,4 @@ Always end with:
 - If clusters detected: "Run `/bigeye-incidents auto` to group related issues"
 - Top critical issue: "Run `/bigeye-rca {issue}` for root cause analysis"
 - If many NEW issues: "Run `/bigeye-incidents auto` then acknowledge clusters"
+- For any issue you want to hand to a data vendor: `/bigeye-ticket <display_name>`

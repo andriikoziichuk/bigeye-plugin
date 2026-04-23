@@ -34,6 +34,8 @@ Parse the user's input and invoke the matching sub-skill using the Skill tool:
 | "what's not monitored?", "find gaps", "coverage", "missing monitors" | Skill: `bigeye-coverage` |
 | "add monitors", "deploy", "set up monitoring", "create metric" | Skill: `bigeye-deploy` |
 | "group issues", "create incident", "merge issues", "incident" | Skill: `bigeye-incidents` |
+| "draft a ticket", "write a ticket for issue X", "vendor ticket", "SR", "service request" | Skill: `bigeye-ticket` with args passed through |
+| "improve monitors", "tighten regex", "better thresholds", "recommend monitors", "weak monitors" | Skill: `bigeye-improve` with args passed through |
 
 ## Ambiguous Intent
 
@@ -48,6 +50,8 @@ What would you like to do?
 4. **Coverage** — Find monitoring gaps (`/bigeye-coverage`)
 5. **Deploy Monitors** — Set up new monitors (`/bigeye-deploy`)
 6. **Incidents** — Group related issues (`/bigeye-incidents`)
+7. **Draft a vendor ticket** — render a markdown ticket for an issue (`/bigeye-ticket`)
+8. **Improve monitors** — tighten weak monitors, recommend new ones (`/bigeye-improve`)
 ```
 
 ## With Arguments

@@ -46,6 +46,8 @@ Your `~/.claude/bigeye-plugin/profiles.json` is preserved across updates — sco
 | `/bigeye-coverage` | Find monitoring gaps across dimensions (scope-filtered) |
 | `/bigeye-deploy [target]` | Deploy monitors with confirmation |
 | `/bigeye-incidents [ids/auto]` | Group related issues into incidents |
+| `/bigeye-ticket [issue]` | Draft a copy-pasteable markdown vendor ticket |
+| `/bigeye-improve [table]` | Deep recommendations for weak monitors and missing coverage |
 
 ## Scheduled Agent
 
@@ -60,6 +62,8 @@ This runs triage every morning at 8am, produces a summary, and sends a Slack not
 ## Configuration
 
 **Scope profiles (per-user):** Run `/bigeye-config init` once after installing the plugin. This creates `~/.claude/bigeye-plugin/profiles.json` with your workspace ID and optional filters (data sources, tables, schemas, tags). Every skill applies the active profile automatically; override per-invocation with `--profile <name>`, `--no-scope`, or `--workspace <id>`.
+
+**Ticket templates:** `/bigeye-ticket` reads and writes `~/.claude/bigeye-plugin/ticket-templates/<name>.md`. Seeded with a `default.md` on first run. Manage via `/bigeye-ticket templates add/edit/delete/list`.
 
 **Shared conventions:** edit `skills/bigeye/references/conventions.md` to customize:
 - Slack channel and mention groups
