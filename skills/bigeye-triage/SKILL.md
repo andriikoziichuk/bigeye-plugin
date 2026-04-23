@@ -41,69 +41,51 @@ Parse each JSON file in `$TMPDIR`. Filter in-memory:
 - Keep only issues whose `status` is `ISSUE_STATUS_NEW`, `ISSUE_STATUS_ACKNOWLEDGED`, or `ISSUE_STATUS_MONITORING`.
 - If the `new` argument was supplied, keep only `ISSUE_STATUS_NEW`.
 - If the `24h` argument was supplied, keep only issues with `openedAt` within the last 24 hours.
+- **Table filter (profile-driven):** build `effective_table_ids = union(profile.table_ids, resolved(profile.table_names))`. If `effective_table_ids` is non-empty, keep only issues whose `metricMetadata.datasetId` is in that set. The `bigeye issues get-issues` CLI does not accept a table flag, so this filter MUST be applied post-fetch or tables outside scope will leak into the output.
 - Cap at `max_issues` (50 by default, or the user's override).
 
 If the filtered list is empty, print the empty-result message per `scope.md` Step H and stop.
 
 Note: the CLI has no `--tag` filter; scope tags are no longer supported.
+Note: when MCP is unavailable, `table_names` cannot be resolved to IDs — the skill MUST print a one-line warning listing unresolved names, then fall back to `effective_table_ids = profile.table_ids` alone. Issues on those named-but-unresolved tables will leak through unless the user also lists the IDs explicitly.
 
-### Step 2: Classify Severity
-
-For each issue, apply the severity rules from conventions.md:
-
-**Critical:**
-- Dimension is Freshness or Volume (pipeline reliability)
-- Issue is older than 4 hours and still NEW
-- Issue has 3+ related issues
-
-**Warning:**
-- Dimension is Validity, Completeness, or Uniqueness
-- Issue has 1-2 related issues
-- Issue is ACKNOWLEDGED but older than 24 hours
-
-**Low:**
-- Recently opened (< 1 hour) with no related issues
-- Distribution or Format dimension
-- Already in MONITORING status
-
-### Step 3: Detect Issue Clusters
+### Step 2: Detect Issue Clusters
 
 If `MCP_AVAILABLE=true`:
-  For each Critical and Warning issue, call `mcp__bigeye__list_related_issues` with `starting_issue_id: <issue_id>`. Count related issues per issue. Flag any with 2+ related as a cluster.
+  For each open issue, call `mcp__bigeye__list_related_issues` with `starting_issue_id: <issue_id>`. Count related issues per issue. Flag any with 2+ related as a cluster.
 
 If `MCP_AVAILABLE=false`:
   Print the `cli.md` Step F warning with `{feature_name}=cluster detection`. Set `cluster_count=null` for the output. Do not call MCP.
 
-### Step 4: Format Output
+### Step 3: Format Output
 
-Use this exact format. Sort rows within each severity by `priorityScore` descending. Status is the mapped display name per `conventions.md` (New / Ack'd / Monitoring).
+Group issues by `currentStatus` — one section per status bucket (New / Ack'd / Monitoring). Sort rows within each bucket by `priorityScore` descending. Severity classification (`conventions.md`) is **not** rendered here — status grouping replaces it for triage.
 
 ```
 Scope: {per scope.md Step G}
 
 ## BigEye Triage — {today's date}
 
-### Critical ({count} issues)
-| # | Issue | Status | Score | Dim | Table | Column | Metric (type) | Since | Alerts | First run |
-|---|-------|--------|-------|-----|-------|--------|---------------|-------|--------|-----------|
-| 1 | {display_name} | {status} | {priorityScore} | {dimension} | {tableName} | {columnName or "—"} | {metricName} ({metricType}) | {time_ago} | {alertCount} | {firstMetricRunStatus short form} |
+### New ({count} issues)
+| # | Issue | Score | Dim | Table | Column | Metric (type) | Since | Alerts | First run |
+|---|-------|-------|-----|-------|--------|---------------|-------|--------|-----------|
+| 1 | {display_name} | {priorityScore} | {dimension} | {tableName} | {columnName or "—"} | {metricName} ({metricType}) | {time_ago} | {alertCount} | {firstMetricRunStatus short form} |
 
-### Warning ({count} issues)
-| # | Issue | Status | Score | Dim | Table | Column | Metric (type) | Since | Alerts | First run |
-|---|-------|--------|-------|-----|-------|--------|---------------|-------|--------|-----------|
+### Ack'd ({count} issues)
+| # | Issue | Score | Dim | Table | Column | Metric (type) | Since | Alerts | First run |
+|---|-------|-------|-----|-------|--------|---------------|-------|--------|-----------|
 
-### Low ({count} issues)
-| # | Issue | Status | Score | Dim | Table | Column | Metric (type) | Since | Alerts | First run |
-|---|-------|--------|-------|-----|-------|--------|---------------|-------|--------|-----------|
+### Monitoring ({count} issues)
+| # | Issue | Score | Dim | Table | Column | Metric (type) | Since | Alerts | First run |
+|---|-------|-------|-----|-------|--------|---------------|-------|--------|-----------|
 
 ### Summary
-- {critical} critical, {warning} warning, {low} low
+- {new_count} new, {ackd_count} ack'd, {monitoring_count} monitoring
 - {cluster_count} issue clusters detected (potential shared root cause)
-- Suggested next: `/bigeye-rca {top_critical_issue}` for the top critical issue
+- Suggested next: `/bigeye-rca {top_issue_by_score}` for the highest-scored issue (any status)
 ```
 
 Column sourcing:
-- **Status** — `currentStatus` mapped per `conventions.md` Status Display Mapping
 - **Score** — `priorityScore` (0–100 from BigEye)
 - **Dim** — `metricConfiguration.dimension.displayName`
 - **Table** — `metricMetadata.datasetName`
@@ -112,14 +94,15 @@ Column sourcing:
 - **Alerts** — `alertCount`
 - **First run** — `firstMetricRunStatus` with the `METRIC_RUN_STATUS_` prefix stripped (e.g. `LOWERBOUND_CRITICAL`, `GROUPS_CRITICAL`). For `GROUPS_CRITICAL`, append `(N/M)` when the summary exposes the ratio.
 
-If a severity section has 0 issues, omit that section entirely.
+If a status section has 0 issues, omit that section entirely. Status order is always New → Ack'd → Monitoring.
 
 If `cluster_count` is null (MCP absent), replace the `{cluster_count} issue clusters detected (potential shared root cause)` line in the Summary with: `Cluster detection disabled — MCP not configured (see bigeye-mcp-install.md).`
 
-### Step 5: Suggest Next Actions
+### Step 4: Suggest Next Actions
 
 Always end with:
 - If clusters detected: "Run `/bigeye-incidents auto` to group related issues"
-- Top critical issue: "Run `/bigeye-rca {issue}` for root cause analysis"
+- Highest-scored open issue (any status): "Run `/bigeye-rca {issue}` for root cause analysis"
 - If many NEW issues: "Run `/bigeye-incidents auto` then acknowledge clusters"
+- Stale Monitoring/Ack'd issues with high alert counts: consider closing via `bigeye issues update-issue -cl FALSE_POSITIVE|EXPECTED`
 - For any issue you want to hand to a data vendor: `/bigeye-ticket <display_name>`
