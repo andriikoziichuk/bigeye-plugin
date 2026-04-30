@@ -19,8 +19,8 @@ Used by `bigeye-ticket`. All variables are substituted in a single pass using Mu
 |---|---|---|
 | `{{issue_display_name}}` | CLI issue JSON `displayName` | no |
 | `{{issue_internal_id}}` | CLI issue JSON `id` | no |
-| `{{status}}` | CLI issue JSON `status` mapped per `conventions.md` Status Display Mapping | no |
-| `{{priority}}` | CLI issue JSON `priority` mapped per `conventions.md` Priority Mapping | no |
+| `{{status}}` | CLI issue JSON `status` mapped per `output.md` §Status display mapping | no |
+| `{{priority}}` | CLI issue JSON `priority` mapped per `output.md` §Priority display mapping | no |
 | `{{dimension}}` | CLI issue JSON `dimensions[0]` (first item) | no |
 | `{{metric_type}}` | `metricConfiguration.metricType` | no |
 | `{{metric_name}}` | `metricConfiguration.name` | no |

@@ -1,6 +1,17 @@
 # BigEye Data Observability Plugin
 
-A Claude Code plugin for managing BigEye monitoring at scale. Simplifies triage, root cause analysis, coverage gaps, monitor deployment, and incident management — all through natural language or slash commands.
+A Claude Code plugin for managing BigEye monitoring at scale — built around two workflows (reactive triage and proactive table audits), backed by a persistent dashboard, and chained through atomic skills with consistent output and a local activity log.
+
+## What's new in 0.4.0
+
+- **Two workflow commands** — `/bigeye-today` (reactive: triage → act → loop) and `/bigeye-table <name>` (proactive: audit a table → act → loop). These compose the existing atomic skills; you don't have to remember which command to chain next.
+- **`/bigeye` is now a dashboard.** One-pass snapshot of your scope: open issues, recent activity, per-table coverage, last actions. Non-interactive.
+- **Settings file.** User-editable values (Slack channel, severity thresholds, deploy defaults, default view) moved out of plugin files into `~/.claude/bigeye-plugin/settings.json`. Manage via `/bigeye-config settings show` / `settings edit <key> <value>`.
+- **Activity log.** A new `~/.claude/bigeye-plugin/state.json` records every skill action per issue and per table. No-arg forms (`/bigeye-rca`, `/bigeye-coverage`, `/bigeye-improve`, `/bigeye-table`) resume from where you left off.
+- **Standardized output.** Scope pill, Brief/Full sizing, `Next:`/`More:` footer, `Error / Fix / Why` blocks across every skill.
+- **Backwards-compatible on disk.** No command renames or removals. `profiles.json` and ticket templates are preserved on upgrade.
+
+If you customized the old `conventions.md` reference (Slack channel or severity thresholds) in a previous version, those edits are not migrated automatically — re-apply them via `/bigeye-config settings edit slack.channel '#your-channel'`, etc.
 
 ## Requirements
 
@@ -9,73 +20,56 @@ A Claude Code plugin for managing BigEye monitoring at scale. Simplifies triage,
 - **Bigeye MCP server** (optional; unlocks RCA lineage, coverage scoring, incident creation, cluster detection, display-name lookup, and tag tracking) — see [`bigeye-mcp-install.md`](bigeye-mcp-install.md)
 - Slack MCP server (optional, for morning report notifications)
 
-## How it works
-
-Every BigEye skill uses the CLI as its primary transport. If the MCP server is also configured, advanced features (lineage, clustering, coverage scoring, incidents) become available transparently. If MCP is not configured, skills still run — affected features print a one-line note pointing at `bigeye-mcp-install.md`.
-
-Run `/bigeye-config verify` at any time to see which features are enabled.
-
 ## Installation
-
-Add the marketplace, then install the plugin:
 
 ```bash
 /plugin marketplace add andriikoziichuk/bigeye-plugin
 /plugin install bigeye-plugin@andriikoziichuk-bigeye-plugin
 ```
 
-## Updating
+After install: `/bigeye-config init` once to bind your workspace and scope filters.
 
-Refresh the marketplace cache, then reinstall to pull the latest version:
+## Workflows (start here)
 
-```bash
-/plugin marketplace update andriikoziichuk-bigeye-plugin
-/plugin install bigeye-plugin@andriikoziichuk-bigeye-plugin
-```
+| Command | When to use |
+|---|---|
+| `/bigeye` | Quick snapshot — what's the state of my scope right now? |
+| `/bigeye-today` | Something's broken — show me open issues, let me act. |
+| `/bigeye-table <name>` | Audit a table — coverage, weak monitors, gaps, table-scoped issues. |
 
-Your `~/.claude/bigeye-plugin/profiles.json` is preserved across updates — scope profiles do not need to be re-created after upgrading.
-
-## Commands
+## Atomic skills (called by workflows; usable directly too)
 
 | Command | Description |
-|---------|-------------|
-| `/bigeye` | Smart router — describe what you need in natural language |
-| `/bigeye-config [init/show/switch/add/edit/delete]` | Manage scope profiles (workspace + table/source/schema/tag filters) |
-| `/bigeye-triage` | Prioritized view of active issues (scope-filtered) |
-| `/bigeye-rca [issue#]` | Root cause analysis with lineage tracing |
-| `/bigeye-coverage` | Find monitoring gaps across dimensions (scope-filtered) |
-| `/bigeye-deploy [target]` | Deploy monitors with confirmation |
-| `/bigeye-incidents [ids/auto]` | Group related issues into incidents |
-| `/bigeye-ticket [issue]` | Draft a copy-pasteable markdown vendor ticket |
-| `/bigeye-improve [table]` | Deep recommendations for weak monitors and missing coverage |
+|---|---|
+| `/bigeye-config [init/show/switch/add/edit/delete/verify/settings show/settings edit]` | Manage scope profiles (`profiles.json`) and user settings (`settings.json`). |
+| `/bigeye-triage [new/24h/<N>]` | Prioritized active issues, scope-filtered. |
+| `/bigeye-rca [issue]` | Root-cause analysis with lineage tracing. No-arg → resumes `last_issue`. |
+| `/bigeye-coverage [table]` | Dimension/column gaps + cheap weak-monitor scan. No-arg → resumes `last_table`. |
+| `/bigeye-improve [table]` | Deep monitor recommendations + heavy-mode SQL refinement loop. No-arg → resumes `last_table`. |
+| `/bigeye-deploy [target]` | Create monitors with confirmation gate. |
+| `/bigeye-incidents [ids/auto/add/close]` | Group related issues into incidents. |
+| `/bigeye-ticket [issue]` | Render a markdown vendor ticket from a user-authored template. |
 
-## Scheduled Agent
+## Scheduled agent
 
 Set up the daily morning report:
-
 ```bash
 /schedule create "0 8 * * *" /bigeye-morning-report
 ```
-
-This runs triage every morning at 8am, produces a summary, and sends a Slack notification for critical issues.
+The agent calls `/bigeye-today --report-only` under the hood and posts to Slack (`settings.json.slack.channel`).
 
 ## Configuration
 
-**Scope profiles (per-user):** Run `/bigeye-config init` once after installing the plugin. This creates `~/.claude/bigeye-plugin/profiles.json` with your workspace ID and optional filters (data sources, tables, schemas, tags). Every skill applies the active profile automatically; override per-invocation with `--profile <name>`, `--no-scope`, or `--workspace <id>`.
+**Scope profiles** (`~/.claude/bigeye-plugin/profiles.json`) — owned by `/bigeye-config`. Workspace + filter sets (data sources, tables, schemas). Per-invocation overrides: `--profile <name>`, `--no-scope`, `--workspace <id>`.
 
-**Ticket templates:** `/bigeye-ticket` reads and writes `~/.claude/bigeye-plugin/ticket-templates/<name>.md`. Seeded with a `default.md` on first run. Manage via `/bigeye-ticket templates add/edit/delete/list`.
+**Settings** (`~/.claude/bigeye-plugin/settings.json`) — Slack channel, severity thresholds, deploy defaults, default view. Seeded on first run. Edit via `/bigeye-config settings show` / `settings edit <key> <value>`.
 
-**Shared conventions:** edit `skills/bigeye/references/conventions.md` to customize:
-- Slack channel and mention groups
-- Severity classification thresholds
-- Output formatting preferences
-- Default monitor settings
+**Activity log** (`~/.claude/bigeye-plugin/state.json`) — append-only, LRU-pruned (last 500 issues, last 100 tables). Backs no-arg fallbacks and the dashboard's "History" / "Recently closed" sections.
 
-## Skill Chaining
+**Ticket templates** (`~/.claude/bigeye-plugin/ticket-templates/`) — managed via `/bigeye-ticket templates add/edit/delete/list`. Seeded with a `default.md` on first run.
 
-Skills suggest the logical next step:
+## How features degrade without MCP
 
-```
-/bigeye-triage → /bigeye-rca 10921 → /bigeye-incidents 10919 10920 10921
-/bigeye-coverage → /bigeye-deploy gaps --priority high
-```
+The Bigeye CLI is the primary transport. MCP unlocks lineage, clustering, coverage scoring, incidents, display-name lookup, profile data, and tag tracking. When MCP is unavailable, every skill prints a one-line note and continues with whatever the CLI alone can show. Some operations hard-fail (coverage scoring, incident creation, display-name lookup) — those skills print a clear pointer to `bigeye-mcp-install.md`.
+
+Run `/bigeye-config verify` to see exactly what's enabled.

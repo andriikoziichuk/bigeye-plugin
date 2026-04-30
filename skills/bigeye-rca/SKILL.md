@@ -6,152 +6,110 @@ user-invocable: true
 
 # BigEye Root Cause Analysis
 
-Answers "why is this broken?" — traces an issue through data lineage to find the upstream root cause.
+What it does: traces an issue through data lineage to find the upstream root cause, related issues, and resolution steps. Atomic. No-arg form picks up from `state.json.last_issue`.
 
-**Before doing anything else**, read `skills/bigeye/references/conventions.md` for severity classification and output formatting, and `skills/bigeye/references/scope.md` for how to load and apply the active scope profile, and skills/bigeye/references/cli.md for CLI invocation rules and MCP-availability detection.
+Follow `skills/bigeye/references/preamble.md` for scope, settings, CLI, and MCP detection before any BigEye call. Output shape lives in `skills/bigeye/references/output.md`.
 
-**RCA special case:** primary issue lookup by ID is ALWAYS unscoped (the user named a specific issue). Scope applies only to the lineage expansion and related-issue search in Steps 3–4. See scope.md Step I for the out-of-scope soft-notice text.
+Per `preamble.md` Step 5: primary issue lookup is **unscoped**. Scope applies only to lineage expansion and related-issue filtering. Out-of-scope soft notice rules also live in Step 5.
 
 ## Arguments
 
-Parse `$ARGUMENTS`:
-- A number (e.g., `10921`): issue display name to investigate
-- Empty: run a lightweight triage to find the top critical issue and investigate that
-- `--internal-id`: treat the numeric argument as an internal ID instead of a display name. Skips the MCP display-name lookup. Required when MCP is unavailable.
+| Invocation | Purpose | Example |
+|---|---|---|
+| `<display_name>` | Investigate a specific issue (e.g., `10921`) | `/bigeye-rca 10921` |
+| (no arg) | Resume the last investigated issue from `state.json.last_issue`; if empty, ask | `/bigeye-rca` |
+| `<internal_id> --internal-id` | Bypass MCP display-name lookup | `/bigeye-rca 42 --internal-id` |
+
+Global flags — see `output.md`.
 
 ## Procedure
 
-### Step 0: Load Scope
+1. Follow `preamble.md` Steps 1–7.
 
-Follow `skills/bigeye/references/scope.md` (Steps A–E) to load the active profile. Parse `--profile <name>`, `--no-scope`, and `--workspace <id>` from `$ARGUMENTS` before parsing the skill's own arguments. Then follow cli.md Step B to detect MCP availability (sets MCP_AVAILABLE).
+2. Resolve the issue:
+   - With `--internal-id`: treat the numeric arg as `internal_id` directly.
+   - With no arg:
+     - If `state.json.last_issue` is set: use it as the display name. Print one line: `Resuming issue {display_name} from previous session.`
+     - Else: ask the user `Which issue? (display name)` and stop until they answer.
+   - Otherwise the arg is a display name → resolve via MCP `search_issues`. If `MCP_AVAILABLE=false`, hard-fail per `preamble.md` Step 7.B with `feature_name=display-name lookup` and a Fix line `/bigeye-rca <internal-id> --internal-id`.
 
-RCA reminder: the primary issue lookup in Step 1 ignores scope. Scope applies to Steps 3 (lineage expansion) and 4 (related issues only).
+   On out-of-scope hit, print the soft notice per `preamble.md` Step 5 immediately after the scope pill.
 
-### Step 1: Resolve the Issue
+3. Fetch issue details via CLI:
+   ```bash
+   TMPDIR=$(mktemp -d -t bigeye-XXXXXX)
+   trap 'rm -rf "$TMPDIR"' EXIT
+   bigeye -w <profile> issues get-issues -iid <internal_id> -op "$TMPDIR"
+   ```
+   Read the single JSON. Note: metric type, table, column, opened_at, status, events history.
 
-Parse the argument:
-- If `--internal-id` was provided, treat the number as an internal ID directly; set `internal_id={number}`. Skip the MCP lookup.
-- If no argument was provided, run the fallback described below (auto-select top critical).
-- Otherwise the number is a display name; must be resolved via MCP.
+4. Lineage trace (MCP):
+   - `MCP_AVAILABLE=true`: call `mcp__bigeye__get_issue_lineage_trace` with `issue_id`, `include_root_cause_analysis: true`, `include_impact_analysis: true`, `max_depth: 5`. Plus non-empty scope parameters from preamble Step 1.E if the tool's schema accepts them; otherwise post-filter.
+   - `MCP_AVAILABLE=false`: emit MCP-absent warning per Step 7.B with `feature_name=lineage trace`. Skip this step.
 
-**Display-name → internal-ID lookup (MCP required):**
+5. Related issues (MCP):
+   - `MCP_AVAILABLE=true`: `mcp__bigeye__list_related_issues` with `starting_issue_id`. Filter to in-scope tables/sources unless `--no-scope`. Note `isRootCause: true` rows.
+   - `MCP_AVAILABLE=false`: emit the warning. Skip.
 
-If `MCP_AVAILABLE=true`:
-  Call `mcp__bigeye__search_issues` with `name_query: "{number}"`. If no match, tell the user and stop. If multiple, list and ask which. Extract `id` (internal ID).
+6. Resolution steps (MCP):
+   - `MCP_AVAILABLE=true`: `mcp__bigeye__get_resolution_steps` with `issue_id`.
+   - `MCP_AVAILABLE=false`: emit the warning. Skip.
 
-If `MCP_AVAILABLE=false`:
-  Print the `cli.md` Step F warning with `{feature_name}=display-name lookup` and `{CLI-only workaround}=Re-run with --internal-id <internal-id> (find the internal ID in the Bigeye UI URL: app.bigeye.com/issue/<internal-id>)`. Stop the skill — there's nothing useful to show without an internal ID.
+7. Render output:
+   ```
+   {scope pill}
+   {soft notice if applicable}
+   {if any of steps 4–6 were skipped: a single line "Reduced RCA — MCP unavailable. Lineage, related issues, and/or resolution steps omitted. See bigeye-mcp-install.md."}
 
-**If no argument was provided (auto-select):**
+   ## Root Cause Analysis — Issue #{display_name}
 
-Use the CLI per `cli.md` Step C to fetch the 5 most recent NEW issues:
+   ### Issue
+   {metric_type} failed on {schema}.{table}
+   Column: {column or "table-level"}
+   Status: {status_display} | Since: {time_since} | Priority: {priority_display}
 
-```bash
-TMPDIR=$(mktemp -d -t bigeye-XXXXXX)
-trap 'rm -rf "$TMPDIR"' EXIT
-bigeye -w <profile> issues get-issues -op "$TMPDIR"
-```
+   ### Lineage Trace
+   {upstream_node_1} -> ... -> {issue_table}
+   {Highlight any node flagged as ROOT CAUSE.}
 
-Read the JSON files, filter to `ISSUE_STATUS_NEW`, apply severity per `conventions.md`, pick the top Critical (or top Warning if no Critical). Use that issue's `id` as `internal_id`. Tell the user which issue was auto-selected and why.
+   ### Related Issues
+   | Issue | Dimension | Table | Root Cause? |
+   |---|---|---|---|
+   | ... | ... | ... | yes/no |
 
-### Step 2: Get Full Issue Details
+   ### Resolution Steps
+   {numbered list from get_resolution_steps}
 
-Use CLI per `cli.md` Step C:
+   ### Suggested Actions
+   - {If 2+ related: "Group into incident: /bigeye-incidents <ids>"}
+   - Acknowledge or close: /bigeye-incidents close {display_name} --label <label>
+   - {If root cause is upstream: "Investigate upstream: /bigeye-rca <root_cause_display>"}
+   ```
 
-```bash
-TMPDIR=$(mktemp -d -t bigeye-XXXXXX)
-trap 'rm -rf "$TMPDIR"' EXIT
-bigeye -w <profile> issues get-issues -iid <internal_id> -op "$TMPDIR"
-```
+   For any MCP step skipped, replace its body with `(skipped — MCP unavailable)`.
 
-Read the single JSON file. Extract and note:
-- Metric type (`metricConfiguration.metricType`)
-- Table (`tableName`) and column (`columnName`)
-- When started (`openedAt` — first event timestamp in `events[]`)
-- Current status (`status`)
-- Event history (`events[]`)
+8. Footer:
+   ```
+   Next: /bigeye-incidents {related_ids}     ({count} related — same root cause)
+   More: /bigeye-ticket {display_name}  ·  /bigeye-incidents close {display_name}  ·  /bigeye-today
+   ```
+   If no related issues found, replace `Next:` with `Next: /bigeye-incidents close {display_name} --label true-negative     (resolved or expected)`.
 
-### Step 3: Trace Lineage
+## State persistence
 
-If `MCP_AVAILABLE=false`:
-  Print the `cli.md` Step F warning with `{feature_name}=lineage trace`. Skip this step. Proceed to the next.
+On successful render, follow `preamble.md` Step 8.B for the `bigeye-rca` row:
+- Set `state.json.last_issue = "<display_name>"`.
+- If the table is known, set `state.json.last_table = "<schema.table>"`.
+- Append `{ skill: "bigeye-rca", at: <iso8601-now> }` to `state.json.issues[<display_name>].actions`.
+- Update `internal_id`, `first_seen` (if absent), `last_seen`, `status_when_last_seen`.
+- Update `state.json.tables[<fq>].last_seen` and `actions[]` similarly.
 
-If `MCP_AVAILABLE=true`:
-  Call `mcp__bigeye__get_issue_lineage_trace` with:
-  - `issue_id: {internal_id}`
-  - `include_root_cause_analysis: true`
-  - `include_impact_analysis: true`
-  - `max_depth: 5`
-  - Plus non-empty scope parameters from Step 0 if the tool's schema accepts them; otherwise post-filter the returned nodes/edges to the in-scope tables only.
+Then run pruning per Step 8.C.
 
-  From the result, identify:
-  - The upstream path from the issue to its root cause
-  - Whether a root cause node was identified
-  - Downstream impact (how many tables/columns affected)
+## Errors
 
-### Step 4: Get Related Issues
-
-If `MCP_AVAILABLE=false`:
-  Print the `cli.md` Step F warning with `{feature_name}=related issues`. Skip this step. Proceed to the next.
-
-If `MCP_AVAILABLE=true`:
-  Call `mcp__bigeye__list_related_issues` with `starting_issue_id: {internal_id}`.
-
-  Filter the returned list to only include issues whose table/data_source falls inside the working profile (per Step 0 map). Do not apply this filter under `--no-scope`.
-
-  Note which related issues have `isRootCause: true`.
-
-### Step 5: Get Resolution Steps
-
-If `MCP_AVAILABLE=false`:
-  Print the `cli.md` Step F warning with `{feature_name}=resolution steps`. Skip this step. Proceed to the next.
-
-If `MCP_AVAILABLE=true`:
-  Call `mcp__bigeye__get_resolution_steps` with `issue_id: {internal_id}`.
-
-### Step 6: Format Output
-
-If any MCP step (3, 4, or 5) was skipped, insert this line immediately after the Scope: header, before the `## Root Cause Analysis — Issue #{...}` heading:
-
-```
-Reduced RCA — MCP unavailable. Lineage, related issues, and/or resolution steps omitted. See bigeye-mcp-install.md.
-```
-
-For any MCP section that was skipped (Lineage Trace, Related Issues, Resolution Steps), replace its body with the single line: `(skipped — MCP unavailable)`.
-
-```
-Scope: {per scope.md Step G}
-{If the primary issue is outside the working scope, insert the soft notice from scope.md Step I on the next line.}
-
-## Root Cause Analysis — Issue #{display_name}
-
-### Issue
-{metric_type} failed on {table_name}
-Column: {column_name or "table-level"}
-Status: {status_display} | Since: {time_since} | Priority: {priority_display}
-
-### Lineage Trace
-{upstream_node_1} -> {upstream_node_2} -> ... -> {issue_table}
-                     ^ ROOT CAUSE HERE
-{Describe what the lineage trace reveals. If a root cause node was identified,
-highlight it prominently. If upstream issues exist, name them.}
-
-### Related Issues (same root cause)
-| Issue | Dimension | Table | Root Cause? |
-|-------|-----------|-------|-------------|
-| {display_name} | {dimension} | {table} | {yes/no} |
-
-{If no related issues, say "No related issues found — this appears to be an isolated issue."}
-
-### Resolution Steps
-{numbered list from get_resolution_steps}
-
-### Suggested Actions
-{If 2+ related issues:}
-- Group into incident: `/bigeye-incidents {issue_ids_space_separated}`
-{Always:}
-- Acknowledge this issue: updates status to ACKNOWLEDGED
-- Close as resolved: `/bigeye-incidents close {display_name} --label true-negative`
-{If root cause is upstream:}
-- Investigate upstream root cause: `/bigeye-rca {root_cause_issue_number}`
-```
+| Condition | Block |
+|---|---|
+| Display-name unresolved (MCP) | `Error: BigEye returned no match for issue '<display_name>'.` / `Fix: re-check the number in the BigEye UI URL.` / `Why: search_issues returned 0 hits.` |
+| MCP unavailable + display-name arg + no `--internal-id` | per Step 7.B with the workaround line |
+| CLI / parse / scope errors | per Step 7.D |
