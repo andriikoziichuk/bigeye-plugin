@@ -6,163 +6,131 @@ user-invocable: true
 
 # BigEye Ticket Drafter
 
-Renders a markdown ticket draft from a BigEye issue using a user-authored template. Output is copy-pasteable markdown. The plugin never submits tickets anywhere.
+What it does: renders a markdown ticket draft from a BigEye issue using a user-authored template at `~/.claude/bigeye-plugin/ticket-templates/<name>.md`. Output is copy-pasteable markdown — the plugin never submits anywhere.
 
-**Before doing anything else**, read `skills/bigeye/references/conventions.md` for status/priority mapping, `skills/bigeye/references/scope.md` for scope loading, `skills/bigeye/references/cli.md` for CLI invocation and MCP-availability detection, and `skills/bigeye/references/improve.md` §1 for the template variable catalog.
+Follow `skills/bigeye/references/preamble.md` for scope, settings, CLI, and MCP detection before any BigEye call. Output shape lives in `skills/bigeye/references/output.md`. Template variable catalog lives in `skills/bigeye/references/improve.md` §1.
+
+Per `preamble.md` Step 5, primary issue lookup is **unscoped** — scope applies only to MCP lineage/related calls.
 
 ## Arguments
 
-Parse `$ARGUMENTS`. Remove `--profile`, `--no-scope`, `--workspace` scope flags first per `scope.md` Step B.
-
-| Invocation | Behavior |
-|---|---|
-| `/bigeye-ticket <issue>` | Render `default` template for the named issue |
-| `/bigeye-ticket --template <name> <issue>` | Use a specific named template |
-| `/bigeye-ticket templates list` | Print name, modified-at, size for each template in `~/.claude/bigeye-plugin/ticket-templates/` |
-| `/bigeye-ticket templates add <name>` | Wizard: paste template body, validate, save |
-| `/bigeye-ticket templates edit <name>` | Wizard: re-paste body; preserve existing file until user confirms |
-| `/bigeye-ticket templates delete <name>` | Confirm + remove file |
-| `--internal-id` | Treat the numeric argument as an internal ID (bypass MCP display-name lookup) — required when MCP is unavailable |
+| Invocation | Purpose | Example |
+|---|---|---|
+| `<issue>` | Render the `default` template for the named issue | `/bigeye-ticket 10921` |
+| (no arg) | Use `state.json.last_issue`; if empty, ask | `/bigeye-ticket` |
+| `--template <name> <issue>` | Use a specific named template | `/bigeye-ticket --template oracle 10921` |
+| `templates list` | Print name, modified-at, size for each template | |
+| `templates add <name>` | Wizard: paste template body, validate, save | |
+| `templates edit <name>` | Wizard: re-paste body; preserve until confirmed | |
+| `templates delete <name>` | Confirm + remove file | |
+| `--internal-id` | Treat the numeric argument as an internal ID (bypass MCP lookup) | |
 
 Template-name validation: `^[a-zA-Z0-9_-]+$`. Reject `default` for `add` unless the user explicitly confirms overwrite.
 
-## Render Path
+Global flags — see `output.md`.
 
-### Step 0: Load scope and detect MCP
+## Render path
 
-Follow `scope.md` Steps A–E then `cli.md` Step B. Per `scope.md` Step F, the primary issue lookup is **unscoped** — scope applies only to MCP lineage/related calls.
+1. Follow `preamble.md` Steps 1–7.
 
-### Step 1: Seed templates directory on first run
+2. Seed templates directory on first run if `~/.claude/bigeye-plugin/ticket-templates/` is missing or empty:
+   - Create the directory.
+   - Copy the bundled `skills/bigeye-ticket/templates/default.md` to `~/.claude/bigeye-plugin/ticket-templates/default.md`.
+   - Print: `Seeded default template. Run /bigeye-ticket templates edit default to customize, or /bigeye-ticket templates add <name> to add your own.`
+   - Continue. If `--template <name>` names something other than `default`, stop with the template-not-found error.
 
-If `~/.claude/bigeye-plugin/ticket-templates/` is missing or empty:
+3. Resolve the issue:
+   - `--internal-id`: number is internal ID directly.
+   - No arg + `state.json.last_issue` set: use it as display name. Print `Drafting for issue {display_name} (last from prior session).`
+   - No arg + state empty: ask `Which issue?` and stop.
+   - Display name → MCP `search_issues` (hard-fail per Step 7.B if MCP off, with workaround `Re-run with --internal-id <internal-id>`).
 
-1. Create the directory.
-2. Copy the bundled template from the plugin directory to `~/.claude/bigeye-plugin/ticket-templates/default.md`. The bundled file is at `skills/bigeye-ticket/templates/default.md` inside the plugin checkout.
-3. Print exactly one line:
-   `Seeded default template. Run /bigeye-ticket templates edit default to customize, or /bigeye-ticket templates add <name> to add your own.`
-4. Continue with the render. If `--template <name>` names something other than `default`, stop with the "template not found" error in §Errors.
+4. Fetch issue details via CLI:
+   ```bash
+   TMPDIR=$(mktemp -d -t bigeye-XXXXXX)
+   trap 'rm -rf "$TMPDIR"' EXIT
+   bigeye -w <profile> issues get-issues -iid <internal_id> -op "$TMPDIR"
+   ```
+   Read the JSON. Extract all CLI-sourced variables per `improve.md` §1 (`MCP required? = no` rows).
 
-### Step 2: Resolve the issue
+5. Fetch MCP-only variables (best-effort). Track an `affected_vars` list. For each:
+   - `{{downstream_tables}}` — if MCP on, `mcp__bigeye__get_issue_lineage_trace` (`include_impact_analysis: true`, `max_depth: 3`). Format as bullet list. On error / MCP off: substitute `_(unavailable — MCP not configured)_` and add to `affected_vars`.
+   - `{{related_issues}}` — if MCP on, `mcp__bigeye__list_related_issues`. Format as bullet list. Else: substitute and add.
+   - `{{resolution_steps}}` — if MCP on, `mcp__bigeye__get_resolution_steps`. Format as numbered list. Else: substitute and add.
 
-Parse the argument:
-- If `--internal-id` was provided, treat the number as an internal ID directly; set `internal_id={number}`. Skip the MCP lookup.
-- Otherwise the number is a display name; must be resolved via MCP.
+   Apply preamble Step 1.E filtering to MCP calls (downstream/related items kept only when in scope; primary issue itself unscoped per Step 5).
 
-**Display-name → internal-ID lookup (MCP required):**
+6. Render `{{sample_query}}` per `improve.md` §1.1 from the metric type.
 
-If `MCP_AVAILABLE=true`:
-  Call `mcp__bigeye__search_issues` with `name_query: "{number}"`. If no match, tell the user and stop. If multiple, list and ask which. Extract `id` (internal ID).
+7. Load the template body from `~/.claude/bigeye-plugin/ticket-templates/<name>.md` (default if `--template` not given). On I/O error, follow §Errors below.
 
-If `MCP_AVAILABLE=false`:
-  Print the `cli.md` Step F warning with `{feature_name}=display-name lookup` and `{CLI-only workaround}=Re-run with --internal-id <internal-id> (find the internal ID in the Bigeye UI URL: app.bigeye.com/issue/<internal-id>)`. Stop the skill.
+8. Single-pass `{{variable}}` substitution. Variables in `improve.md` §1 → resolved values. Unknown `{{...}}` → leave literal; collect into `unknown_vars`.
 
-### Step 3: Fetch issue details via CLI
+9. Emit output (in this exact order):
+   1. `{scope pill}`
+   2. blank line
+   3. Triple-backtick fenced block containing the rendered ticket body.
+   4. blank line
+   5. If `affected_vars` non-empty: `Note: {comma-separated names} omitted — MCP not configured (see bigeye-mcp-install.md).`
+   6. If `unknown_vars` non-empty: `Warning: template referenced unknown variables: {comma-separated names}`.
+   7. blank line
 
-Use CLI per `cli.md` Step C:
+10. Footer:
+    ```
+    Next: /bigeye-rca {display_name}     (investigate before sending the ticket)
+    More: /bigeye-incidents close {display_name}  ·  /bigeye-today  ·  /bigeye-ticket templates list
+    ```
 
-```bash
-TMPDIR=$(mktemp -d -t bigeye-XXXXXX)
-trap 'rm -rf "$TMPDIR"' EXIT
-bigeye -w <profile> issues get-issues -iid <internal_id> -op "$TMPDIR"
-```
+## Wizard flow (`templates add` / `templates edit`)
 
-Read the single JSON file. Extract all CLI-sourced variables per `improve.md` §1 (the rows with `MCP required? = no`).
+Mirror `bigeye-config init`. Ask one question at a time; show the running summary.
 
-### Step 4: Fetch MCP-only variables (best-effort)
-
-Track an `affected_vars` list. For each MCP-only variable:
-
-- `{{downstream_tables}}` — if `MCP_AVAILABLE=true`, call `mcp__bigeye__get_issue_lineage_trace` with `issue_id: {internal_id}`, `include_impact_analysis: true`, `max_depth: 3`. Format the downstream nodes as a bullet list. On error or MCP unavailable: substitute `_(unavailable — MCP not configured)_` and add `{{downstream_tables}}` to `affected_vars`.
-- `{{related_issues}}` — if `MCP_AVAILABLE=true`, call `mcp__bigeye__list_related_issues` with `starting_issue_id: {internal_id}`. Format as bullet list. On error or MCP unavailable: substitute and add to `affected_vars`.
-- `{{resolution_steps}}` — if `MCP_AVAILABLE=true`, call `mcp__bigeye__get_resolution_steps` with `issue_id: {internal_id}`. Format as numbered list. On error or MCP unavailable: substitute and add to `affected_vars`.
-
-Apply `scope.md` Step E filtering to the MCP calls (scope affects which downstream/related items are kept; the primary issue itself is unscoped per Step 0).
-
-### Step 5: Render `{{sample_query}}`
-
-Pick the skeleton from `improve.md` §1.1 based on `{{metric_type}}`. Substitute `{schema}`, `{table}`, `{column}` with the issue's values. If the metric type doesn't match a row, render the literal comment `-- no sample query available for metric type {{metric_type}}`.
-
-### Step 6: Load the template file
-
-Template file path: `~/.claude/bigeye-plugin/ticket-templates/<name>.md` (`<name>` defaults to `default` if `--template` not given).
-
-On I/O error (file missing, permission denied, invalid UTF-8): follow §Errors.
-
-### Step 7: Substitute variables
-
-Single-pass replacement of every `{{variable}}` occurrence. Variables in `improve.md` §1 substitute with their resolved values. Any `{{...}}` not in the catalog is left literal; collect the unknowns into an `unknown_vars` list for the warning line.
-
-### Step 8: Emit output
-
-Print in this exact order:
-
-1. `Scope: {per scope.md Step G}`
-2. Blank line.
-3. A triple-backtick fenced block containing the rendered ticket body. The fence opens with three backticks on their own line and closes with three backticks on their own line.
-4. Blank line.
-5. If `affected_vars` is non-empty: one line — `Note: {comma-separated {{variable}} names from affected_vars} omitted — MCP not configured (see bigeye-mcp-install.md).`
-6. If `unknown_vars` is non-empty: one line — `Warning: template referenced unknown variables: {comma-separated {{variable}} names}`.
-7. Blank line.
-8. Suggested next: `-> Run /bigeye-rca {{issue_display_name}} if you have not already investigated.`
-
-## Wizard Flow (`templates add <name>` / `templates edit <name>`)
-
-Ask one question at a time. Mirror the `bigeye-config init` pattern.
-
-1. Validate `<name>` against `^[a-zA-Z0-9_-]+$`. Reject invalid names with: `Template name must match ^[a-zA-Z0-9_-]+$.`
-2. For `add` with `<name>=default`, ask: `The bundled default template already exists. Overwrite it? (y/n)` — on `n`, stop.
-3. If the file exists (both modes): `A template named <name> already exists (size={size} bytes). {For edit: show current size.} {For add: ask Overwrite? (y/n)} — on n, stop.`
-4. Print a short form of the variable catalog — one line per variable, grouped "CLI-sourced" vs "MCP-only", referencing `improve.md` §1 for the full list.
-5. Prompt: `Paste your template. Finish with a single line containing only EOF.`
-6. Read lines until `EOF`. Cap at 200 lines of body. If no `EOF` after 200 lines, stop and ask: `Paste exceeded 200 lines without EOF terminator. Restart the wizard? (y/n)` — on `n`, exit without writing.
-7. Compute a usage summary by scanning the pasted body for `{{...}}` occurrences. Categorise each into "used" (in `improve.md` §1) or "unknown". Print: `Uses: {comma-separated used}. Unknown placeholders: {comma-separated unknown, or "none"}.`
-8. Prompt: `Save? (y/n)` — on `n`, discard without writing.
-9. On `y`, write atomically: write to a sibling temp file in the same directory, then rename over the target. This avoids partial writes if the tool is interrupted.
-10. Print: `Wrote ~/.claude/bigeye-plugin/ticket-templates/<name>.md.`
+1. Validate `<name>` against `^[a-zA-Z0-9_-]+$`. Reject otherwise: `Template name must match ^[a-zA-Z0-9_-]+$.`
+2. `add` with `<name>=default`: ask `The bundled default template already exists. Overwrite it? (y/n)` — `n` stops.
+3. If file exists (both modes): print size; ask `Overwrite? (y/n)` for `add`. For `edit`, just show current size.
+4. Print short variable catalog from `improve.md` §1, grouped CLI-sourced / MCP-only.
+5. `Paste your template. Finish with a single line containing only EOF.`
+6. Read up to 200 lines. If no `EOF` after 200, ask `Paste exceeded 200 lines without EOF terminator. Restart the wizard? (y/n)` — `n` exits without writing.
+7. Scan body for `{{...}}`; categorize "used" vs "unknown" against §1. Print `Uses: <list>. Unknown placeholders: <list or "none">.`
+8. Prompt `Save? (y/n)` — `n` discards.
+9. Write atomically (sibling tempfile + rename).
+10. Print `Wrote ~/.claude/bigeye-plugin/ticket-templates/<name>.md.`
 
 ### `templates list`
 
-Read the directory. For each `*.md` file, print one row:
+Print one row per `*.md` file:
 ```
 | Template | Modified | Size |
 |---|---|---|
 | {name} | {ISO-8601 mtime} | {bytes} |
 ```
-
-If the directory is missing or empty: print `No templates yet. Run /bigeye-ticket <issue> to seed the default, or /bigeye-ticket templates add <name>.`
+Empty/missing dir: `No templates yet. Run /bigeye-ticket <issue> to seed the default.`
 
 ### `templates delete <name>`
 
-1. Confirm file exists. On missing, print `Template <name> not found.` and list available templates.
-2. Ask: `Delete template <name>? (y/n)` — on `n`, stop.
-3. Remove the file. Print: `Deleted ~/.claude/bigeye-plugin/ticket-templates/<name>.md.`
+1. Confirm file exists (else list available + stop).
+2. Ask `Delete template <name>? (y/n)` — `n` stops.
+3. Remove file. Print `Deleted ~/.claude/bigeye-plugin/ticket-templates/<name>.md.`
+
+## State persistence
+
+On successful render, follow `preamble.md` Step 8.B for the `bigeye-ticket` row:
+- Set `state.json.last_issue = "<display_name>"`.
+- Append `{ skill: "bigeye-ticket", at: <iso8601> }` to `state.json.issues[<display>].actions`.
+- Update `internal_id`, `first_seen`, `last_seen`.
+
+Wizard subcommands (`templates add/edit/delete/list`) do **not** write state.
+
+Then run pruning per Step 8.C.
 
 ## Errors
 
 | Condition | Behavior |
 |---|---|
-| Issue not found (CLI or MCP `search_issues`) | Print the CLI/MCP error text; suggest re-checking the display name; stop |
-| Template file not found | List available templates (names only); suggest `/bigeye-ticket templates add <name>`; stop |
-| Template I/O error (permissions, encoding) | Print the OS error + absolute file path; do not delete the file; stop |
-| Unknown `{{variable}}` in template | Leave placeholder literal; append the single warning line per Step 8 item 6; continue rendering |
-| MCP-only variable fetch failed / MCP down | Substitute `_(unavailable — MCP not configured)_`; add to `affected_vars` for the footer note per Step 8 item 5 |
-| Wizard paste exceeds 200 lines | Stop reading; ask restart per wizard Step 6; do not touch disk |
-| Wizard confirm `n` | Discard in-memory template; do not touch disk |
-
-CLI auth and scope errors: follow `cli.md` Step G unchanged.
-
-## Output example (MCP on)
-
-```
-Scope: profile=work-area · workspace=42 · sources=1
-
-```
-Service Request Name: BigEye #10921 — Freshness on warehouse.public.orders.created_at
-Product Category: [Select appropriate category]
-...
-SR Type: Problem/Incident
-Severity: Medium
-```
-
--> Run /bigeye-rca 10921 if you have not already investigated.
-```
+| Issue not found | print error per Step 7.D; suggest checking display name |
+| Template file not found | list available; suggest `/bigeye-ticket templates add <name>` |
+| Template I/O error | print OS error + absolute path; do not delete |
+| Unknown `{{variable}}` | leave literal; append warning per Step 9.6 |
+| MCP-only variable fetch failed / MCP down | substitute `_(unavailable — MCP not configured)_`; add to `affected_vars` for footer |
+| Wizard paste exceeds 200 lines | per wizard Step 6 |
+| Wizard `n` confirm | discard without disk touches |

@@ -1,62 +1,113 @@
 ---
 name: bigeye
-description: Use when the user mentions BigEye, data quality issues, monitoring gaps, data freshness, monitor coverage, issue triage, root cause analysis, or when BigEye CLI or MCP tools are being used in conversation. Routes to the appropriate BigEye sub-skill.
+description: Use when the user mentions BigEye, data quality issues, monitoring gaps, data freshness, monitor coverage, issue triage, root cause analysis, or wants a snapshot of the current state of their BigEye scope. Renders the dashboard.
 user-invocable: true
 ---
 
-# BigEye Data Observability Hub
+# BigEye Dashboard
 
-Central entry point for all BigEye monitoring workflows. Routes to the right sub-skill based on user intent.
+What it does: one-pass, non-interactive snapshot of the active scope — current issues, recent activity from local state, per-table coverage and open counts, and a stable command cheatsheet. No menus. No prompts. Footer points at the workflow command that does the most work for the user right now.
 
-**Before doing anything else**, read `skills/bigeye/references/conventions.md` for shared formatting and severity rules, and `skills/bigeye/references/scope.md` for how to apply the user's active scope profile, and skills/bigeye/references/cli.md for CLI invocation rules and MCP-availability detection.
+Follow `skills/bigeye/references/preamble.md` for scope, settings, CLI, and MCP detection before any BigEye call. Output shape lives in `skills/bigeye/references/output.md`.
 
-## Available Skills
+## Arguments
 
-| Skill | Command | Purpose |
-|-------|---------|---------|
-| Config | `/bigeye-config` | Set up workspace + scope profiles (wizard) |
-| Triage | `/bigeye-triage` | What's on fire? Prioritized active issues |
-| Root Cause Analysis | `/bigeye-rca` | Why is this broken? Lineage-traced diagnosis |
-| Coverage | `/bigeye-coverage` | What's not monitored? Dimension/column gaps |
-| Deploy | `/bigeye-deploy` | Set up monitors with sensible defaults |
-| Incidents | `/bigeye-incidents` | Group related issues into incidents |
+| Invocation | Purpose | Example |
+|---|---|---|
+| (no arg) | Render the dashboard for the active profile | `/bigeye` |
+| `--all` | Ignore scope filters for the issues + tables sections; expand state.json view | `/bigeye --all` |
+| `<free text>` | Render the dashboard, prefixed by a `Did you mean /bigeye-<x>?` hint | `/bigeye triage` |
 
-## Routing
+Global flags — see `output.md`.
 
-Parse the user's input and invoke the matching sub-skill using the Skill tool:
+## Procedure
 
-| User intent | Invoke |
-|-------------|--------|
-| "set up", "configure", "change workspace", "switch profile", "first run" | Skill: `bigeye-config` |
-| "verify setup", "check config", "is MCP working", "test connection" | Skill: `bigeye-config` with args `verify` |
-| "what's broken?", "show active issues", "what's on fire", "triage", "status" | Skill: `bigeye-triage` |
-| "why is issue X failing?", "what caused this?", "root cause", "trace", "debug" | Skill: `bigeye-rca` with issue reference as args |
-| "what's not monitored?", "find gaps", "coverage", "missing monitors" | Skill: `bigeye-coverage` |
-| "add monitors", "deploy", "set up monitoring", "create metric" | Skill: `bigeye-deploy` |
-| "group issues", "create incident", "merge issues", "incident" | Skill: `bigeye-incidents` |
-| "draft a ticket", "write a ticket for issue X", "vendor ticket", "SR", "service request" | Skill: `bigeye-ticket` with args passed through |
-| "improve monitors", "tighten regex", "better thresholds", "recommend monitors", "weak monitors" | Skill: `bigeye-improve` with args passed through |
+1. Follow `preamble.md` Steps 1–7.
 
-## Ambiguous Intent
+2. If trailing args are present and don't match a known flag, print exactly:
+   ```
+   Did you mean /bigeye-<x> <args>? /bigeye shows the dashboard; individual commands run tasks.
+   ```
+   Then continue rendering — do **not** route. The trailing args are otherwise ignored.
 
-If the user's intent doesn't clearly match one skill, present this menu:
+3. Read state.json (preamble Step 8.A). Hold `state.last_workflow`, `state.issues`, `state.tables`, `state.last_issue`, `state.last_table` for later sections.
 
-```
-What would you like to do?
+4. Fetch open issues via CLI (same pattern as `bigeye-triage`; cap at `triage.max_issues`). Apply scope per preamble Step 5. With `--all`, skip the scope filter.
 
-1. **Config** — Set up or switch scope profiles (`/bigeye-config`)
-2. **Triage** — See active issues prioritized by severity (`/bigeye-triage`)
-3. **Root Cause Analysis** — Trace why an issue is happening (`/bigeye-rca`)
-4. **Coverage** — Find monitoring gaps (`/bigeye-coverage`)
-5. **Deploy Monitors** — Set up new monitors (`/bigeye-deploy`)
-6. **Incidents** — Group related issues (`/bigeye-incidents`)
-7. **Draft a vendor ticket** — render a markdown ticket for an issue (`/bigeye-ticket`)
-8. **Improve monitors** — tighten weak monitors, recommend new ones (`/bigeye-improve`)
-```
+5. Cluster count:
+   - MCP on: per-issue `list_related_issues`. Count groups of 2+. Hold as `cluster_count`.
+   - MCP off: `cluster_count = "—"`.
 
-## With Arguments
+6. Coverage average:
+   - MCP on: for each in-scope table, `get_table_dimension_coverage`. Compute the average %. Hold individual values for the "Your tables" section.
+   - MCP off: `coverage_avg = "—"`; per-table coverage = `—`.
 
-If invoked as `/bigeye <text>`, pass `<text>` through the routing logic above. Examples:
-- `/bigeye what's broken` → invoke `bigeye-triage`
-- `/bigeye rca 10921` → invoke `bigeye-rca` with args `10921`
-- `/bigeye coverage columns email` → invoke `bigeye-coverage` with args `columns email`
+7. Build the rendered output, in this order:
+
+   ```
+   {scope pill}
+   ## BigEye Dashboard — {weekday} {month} {day}, {HH:MM}
+
+   Status:  {open_count} open  ·  {new_count} NEW  ·  {cluster_count} clusters  ·  coverage {coverage_avg}%
+   Last:    {short skill tag} {age ago}  ·  {next-most-recent skill tag} {age ago}
+   ```
+
+   - `Last:` reads from `state.last_workflow`/`state.last_issue`/`state.last_table` plus the most recent two `actions[]` entries across `state.issues` + `state.tables`. If `state.json` is empty: `Last: no activity yet — run /bigeye-today to get started`.
+
+   ```
+   Open issues (top 5 by score):
+    # | Issue | Score | Dim       | Table    | Column | Since | History
+    1 | 10921 |  87   | Freshness | orders   | —      | 2h    | rca (4d)
+    ...
+    (N more — run /bigeye-today for full picker)
+   ```
+   - Always exactly 5 rows when the underlying list has more (truncation marker line below the table). When fewer than 5, render only the rows you have, no marker.
+   - `History` from `state.issues[<display>].actions` (last 2 distinct skills, age).
+
+   ```
+   Recently closed (last 7 days):
+    - #10809 Freshness on orders (true-positive, 2d ago)
+    - #10792 Validity on payments.email (false-positive, 4d ago)
+   ```
+   - Up to 5 lines. Sourced only from `state.json` entries whose `status_when_last_seen == "CLOSED"` and `last_seen` within 7 days. Section is omitted entirely if zero.
+
+   ```
+   Your tables:
+    Table                              | Coverage | Open | Last action
+    warehouse.public.orders            |  64%     |  3   | improve 3d ago
+    ...
+   ```
+   - Iterate `profile.table_ids` + resolved `profile.table_names`. Per row: coverage % from Step 6; open count post-filtered from the issue list in Step 4; last action from `state.tables[<fq>].actions[-1]`.
+   - If the profile has no table filters (only workspace + sources), substitute a `Top tables (by activity)` section: 5 most-recently-used tables from `state.tables` filtered by current scope.
+   - If no table filters AND state.tables is empty, omit the section entirely.
+
+   ```
+   Commands:
+    /bigeye-today                   reactive: triage -> act
+    /bigeye-table <name>            proactive: audit a table
+    /bigeye-rca [issue]             root cause a single issue
+    /bigeye-coverage [table]        monitoring gaps
+    /bigeye-improve [table]         tighten weak monitors
+    /bigeye-deploy [target]         create monitors (confirmation)
+    /bigeye-incidents [ids|auto]    group related issues
+    /bigeye-ticket [issue]          render markdown ticket
+    /bigeye-config [subcmd]         profiles + settings
+    /bigeye --all                   dashboard without scope filter
+   ```
+   - Stable across runs. Never reorder.
+
+8. Footer:
+   ```
+   Next: /bigeye-today     ({new_count} NEW issues waiting)
+   More: /bigeye-rca {top_issue}  ·  /bigeye-table {top_table}  ·  /bigeye-incidents auto
+   ```
+   - Replace `Next:` with `Next: /bigeye-config init     (no profile configured yet)` when scope load failed.
+   - When `state.last_table` is set, prefer it for the `More:` table reference; otherwise pick the highest-coverage in-scope table.
+
+## State persistence
+
+`/bigeye` is read-only. **Do not** write to `state.json` from this skill. Triage-style updates to `last_seen` for listed issues are **not** done here (the dashboard's job is to surface, not record). The next workflow skill the user runs (`/bigeye-today`) will refresh those.
+
+## Errors
+
+CLI / scope / parse errors per `preamble.md` Step 7.D. The dashboard never blocks rendering — partial sections are emitted with `(unavailable — <reason>)` placeholders inline.
