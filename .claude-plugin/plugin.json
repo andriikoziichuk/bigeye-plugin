@@ -1,7 +1,7 @@
 {
   "name": "bigeye-plugin",
-  "version": "0.4.0",
-  "description": "BigEye data observability plugin for Claude Code — triage, RCA, coverage, deploy, and incident management.",
+  "version": "0.5.0",
+  "description": "BigEye data observability plugin for Claude Code — daily roster routine, single-monitor improve, batch coverage proposal, and ambient docs grounding.",
   "author": {
     "name": "Andrii Koziichuk"
   }

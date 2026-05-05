@@ -1,6 +1,6 @@
 ---
 name: bigeye-incidents
-description: Use when the user wants to group related BigEye issues into incidents, merge issues, manage existing incidents, or auto-detect issue clusters
+description: Internal — incident grouping helper invoked only when explicitly typed as `/bigeye-incidents`. Do not auto-suggest.
 user-invocable: true
 ---
 

@@ -16,8 +16,9 @@ Follow `skills/bigeye/references/preamble.md` for scope, settings, CLI, and MCP 
 |---|---|---|
 | `<table>` | Analyze the named table; heavy-mode by default | `/bigeye-improve orders` |
 | (no arg) | Use `state.json.last_table`; if empty, ask | `/bigeye-improve` |
-| `metric <metric_id>` | Single-metric deep analysis | `/bigeye-improve metric 17321` |
-| `--light` | Skip heavy-mode SQL loop (Steps 5–6) | `/bigeye-improve orders --light` |
+| `<monitor_id>` | Single-monitor improve mode (integer) — runs the procedure in `references/improve-single.md` | `/bigeye-improve 4421` |
+| `metric <metric_id>` | (Legacy alias for `<monitor_id>` — kept for older docs/scripts) | `/bigeye-improve metric 17321` |
+| `--light` | Skip heavy-mode SQL loop (Steps 8–9) | `/bigeye-improve orders --light` |
 | `--sql-only` | Emit SQL bundle then stop (no paste-back) | `/bigeye-improve orders --sql-only` |
 | `--dimension <name>` | Limit coverage suggestions to one dimension | `/bigeye-improve orders --dimension validity` |
 
@@ -25,16 +26,22 @@ Global flags — see `output.md`.
 
 ## Procedure
 
-1. Follow `preamble.md` Steps 1–7. Per Step 5, the user-named table is **unscoped** — scope applies only to MCP calls that accept filters.
+1. **Argument detection:**
+   - If `$ARGUMENTS` first non-flag token is a positive integer (or the literal `metric <int>`), treat as **single-monitor mode**:
+     - Hard-fail per preamble 7.E if MCP is off. Print the reconnect block and stop.
+     - Run the procedure in `skills/bigeye/references/improve-single.md` and stop.
+   - Otherwise continue with the existing table-mode flow below.
 
-2. Resolve the target table:
+2. Follow `preamble.md` Steps 1–7. Per Step 5, the user-named table is **unscoped** — scope applies only to MCP calls that accept filters.
+
+3. Resolve the target table:
    - Argument given → use it (ambiguous bare name → ask).
    - No argument:
      - `state.json.last_table` set → use it. Print: `Improving {fq} (last table from prior session).`
      - Else if profile resolves to exactly one table → use it (tell the user).
      - Else → ask which table to analyze. Never loop over all tables in a single heavy-mode run.
 
-3. **Existing monitors (always runs):**
+4. **Existing monitors (always runs):**
    ```bash
    TMPDIR=$(mktemp -d -t bigeye-XXXXXX)
    trap 'rm -rf "$TMPDIR"' EXIT
@@ -48,15 +55,15 @@ Global flags — see `output.md`.
 
    Build `weak_monitors` = `[(metric_id, column, heuristic_id, severity, suggestion_text), ...]`.
 
-4. **Missing coverage (MCP-only):**
+5. **Missing coverage (MCP-only):**
    - `MCP_AVAILABLE=false`: per Step 7.B with `feature_name=missing-coverage suggestions`. Skip; set `coverage_suggestions = []`.
    - `MCP_AVAILABLE=true`: `get_table_dimension_coverage` + `get_column_dimension_coverage` for the table. For each gap, draft `(column, dimension, suggested_metric_type, parameters, rationale)`. With `--dimension`, filter to that dimension.
 
-5. **Profile-based refinement (MCP-only):**
+6. **Profile-based refinement (MCP-only):**
    - `MCP_AVAILABLE=false`: skip. Annotate every row in `weak_monitors` and `coverage_suggestions` that would benefit from profile data with `(profile unavailable)` in the rationale.
    - `MCP_AVAILABLE=true`: for each touched column, `mcp__bigeye__get_table_profile` with `table_name`, `columns`. Refine per `improve.md` §2 rules (null rate, distinct count, regex match rate against sample values).
 
-6. **Emit primary report:**
+7. **Emit primary report:**
    ```
    {scope pill}
    ## Monitor Improvement Report — {schema}.{table_name}
@@ -75,16 +82,16 @@ Global flags — see `output.md`.
    - /bigeye-deploy freshness
    - ...
    ```
-   Sections with 0 rows are omitted. If both are empty, print `No improvements found — all monitors look healthy relative to current heuristics and {MCP on: "profile data" / MCP off: "available configuration data"}.` then footer + state-write + exit (skip Steps 7–8).
+   Sections with 0 rows are omitted. If both are empty, print `No improvements found — all monitors look healthy relative to current heuristics and {MCP on: "profile data" / MCP off: "available configuration data"}.` then footer + state-write + exit (skip Steps 8–9).
 
-7. **Heavy-mode SQL bundle (default; skipped by `--light`):**
-   Identify columns still needing deeper reasoning (any `weak_monitors` row flagged `THRESHOLD_DEFAULT`/`METRIC_TYPE_MISMATCH`; any `coverage_suggestions` row whose params aren't final). Empty list → skip Steps 7–8.
+8. **Heavy-mode SQL bundle (default; skipped by `--light`):**
+   Identify columns still needing deeper reasoning (any `weak_monitors` row flagged `THRESHOLD_DEFAULT`/`METRIC_TYPE_MISMATCH`; any `coverage_suggestions` row whose params aren't final). Empty list → skip Steps 8–9.
    Otherwise, render the SQL bundle from `improve.md` §3 templates. Look up the warehouse dialect from CLI's `catalog get-table-info` (`warehouseType` field). Print numbered progress markers `[N/M]` per `output.md` §Progress indicators. Emit the bundle.
    With `--sql-only`: stop after the bundle. With heavy default: emit the paste protocol from `improve.md` §4.1 verbatim, then end the current turn.
 
-8. **Refined recommendations (heavy mode only, triggered by paste):**
+9. **Refined recommendations (heavy mode only, triggered by paste):**
    On the next user message, parse per `improve.md` §4.2. Parse failure → ask for a re-paste of only failed `-- query N` blocks; preserve successful sections.
-   `cancel` → produce a best-effort report from Steps 3–5 + the cancellation line per `improve.md` §4.3.
+   `cancel` → produce a best-effort report from Steps 4–6 + the cancellation line per `improve.md` §4.3.
    Else: emit
    ```
    ## Refined Recommendations
@@ -95,7 +102,7 @@ Global flags — see `output.md`.
    - ...
    ```
 
-9. Footer (always — printed at the end of the **last** block emitted):
+10. Footer (always — printed at the end of the **last** block emitted):
    ```
    Next: /bigeye-deploy columns {top_col} --metric-type {TYPE}     ({weak_count} weak monitors / {gap_count} gaps)
    More: /bigeye-coverage {table}  ·  /bigeye-table {table}  ·  /bigeye-deploy gaps
@@ -103,7 +110,7 @@ Global flags — see `output.md`.
 
 ## State persistence
 
-On the **last** successful render of the run (Step 6 for `--light`/`--sql-only`/empty result; Step 8 for heavy mode), follow `preamble.md` Step 8.B for the `bigeye-improve` row:
+On the **last** successful render of the run (Step 7 for `--light`/`--sql-only`/empty result; Step 9 for heavy mode), follow `preamble.md` Step 8.B for the `bigeye-improve` row:
 - Set `state.json.last_table = "<schema.table>"`.
 - Append `{ skill: "bigeye-improve", at: <iso8601> }` to `state.json.tables[<fq>].actions`.
 - Update `first_seen` / `last_seen`.
@@ -128,5 +135,5 @@ Hard-fail only when CLI itself cannot reach the workspace (auth/network) — per
 | No metrics on table AND MCP off | Print one line `Nothing to improve — no existing monitors and MCP unavailable, so no coverage data. See bigeye-mcp-install.md.`; clean exit |
 | MCP profile fetch partial failure | Continue with successful columns; mark failed rows `(profile unavailable for this column)` |
 | Heavy-mode paste parse failure | Report failed `-- query N` blocks; ask for re-paste of only those; preserve progress |
-| User sends `cancel` mid heavy-mode | Best-effort report from Steps 3–5 + cancellation line per `improve.md` §4.3 |
+| User sends `cancel` mid heavy-mode | Best-effort report from Steps 4–6 + cancellation line per `improve.md` §4.3 |
 | Unknown warehouse dialect for `DISTRIBUTION_BUCKETS` | Emit comment-only skip placeholder per `improve.md` §3; continue |

@@ -1,6 +1,6 @@
 ---
 name: bigeye-today
-description: Use when the user wants to triage today's data quality issues — see what's open, pick one, act (RCA, close, group, ticket), and loop. Reactive workflow.
+description: Internal — superseded by `/bigeye-roster` for the daily flow. Callable directly when explicitly typed as `/bigeye-today`. Do not auto-suggest.
 user-invocable: true
 ---
 

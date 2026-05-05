@@ -1,6 +1,6 @@
 ---
 name: bigeye
-description: Use when the user mentions BigEye, data quality issues, monitoring gaps, data freshness, monitor coverage, issue triage, root cause analysis, or wants a snapshot of the current state of their BigEye scope. Renders the dashboard.
+description: Internal — invoked only when explicitly typed as `/bigeye`. Do not auto-suggest. The user-facing surface in v0.5 is `/bigeye-roster`, `/bigeye-improve`, `/bigeye-coverage`, `/bigeye-config`.
 user-invocable: true
 ---
 

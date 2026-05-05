@@ -1,6 +1,6 @@
 ---
 name: bigeye-triage
-description: Use when the user wants to see active BigEye issues, asks what's broken or on fire, or needs a prioritized view of data quality problems
+description: Internal — invoked only when explicitly typed as `/bigeye-triage`. Do not auto-suggest. Use `/bigeye-roster` instead.
 user-invocable: true
 ---
 

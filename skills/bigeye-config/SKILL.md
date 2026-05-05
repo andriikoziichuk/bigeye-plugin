@@ -25,34 +25,42 @@ Parse `$ARGUMENTS` (space-separated). First token is the subcommand; anything af
 | `settings show` | Print the merged effective settings (file values + shipped defaults for any missing keys) |
 | `settings edit <key> <value>` | Overwrite a single dotted-path key in `~/.claude/bigeye-plugin/settings.json` |
 | `verify` / `verify <name>` | Run a four-point health check (CLI install, CLI workspace, CLI auth, MCP reachability) and print a status table |
+| `hints add` | Author a custom hint via NL → compile → confirm → save (uses `references/hints.md`) |
+| `hints list [<profile>]` | List custom hints for the given (or active) profile |
+| `hints edit <index>` | Edit hint at index (re-runs compile prompt with prior raw pre-filled) |
+| `hints delete <index>` | Remove hint at index |
+| `virtual-tables add <name>` | MCP-resolve a virtual table by name → save `{id, name}` to active profile |
+| `virtual-tables list` | List virtual tables on the active profile |
+| `virtual-tables delete <name-or-id>` | Remove a virtual table from the active profile |
 
 ## Config Files
 
 **`~/.claude/bigeye-plugin/profiles.json`** — plugin-owned; contains profile definitions + default pointer.
 
-**Schema** (note: `tags` field removed in this version):
+**Schema (v0.5):**
 
 ```json
 {
-  "default_profile": "work-area",
+  "active_profile": "prod",
   "profiles": {
-    "work-area": {
+    "prod": {
       "workspace_id": 42,
-      "data_source_ids": [17],
-      "table_ids": [],
-      "table_names": ["orders_main"],
-      "schema_names": []
+      "scope": {
+        "data_sources":   [{"id": 17, "name": "warehouse_prod"}],
+        "schemas":        [],
+        "tables":         [{"id": 901, "name": "orders_main"}],
+        "virtual_tables": []
+      },
+      "monitored_rules": [{"id": 1, "name": "freshness"}],
+      "custom_hints": []
     }
   }
 }
 ```
 
-**`~/.bigeye/config.ini`** — plugin writes the section matching the profile name:
+`active_profile` (formerly `default_profile`) keeps backward-compatible read; new writes use `active_profile`.
 
-```ini
-[work-area]
-workspace_id = 42
-```
+The plugin no longer requires the BigEye CLI for the v0.5 user-facing pillars. The CLI section in `~/.bigeye/config.ini` is **only** written when the user opts into legacy CLI integration (kept for hidden skills). When the wizard finishes, ask: `Also configure ~/.bigeye/config.ini for legacy CLI use? (y/n, default n)`. Default `n` skips the file write entirely.
 
 **`~/.bigeye/credentials`** — user-owned, never touched by the plugin.
 
@@ -78,6 +86,69 @@ workspace_id = 42
 ```
 
 `settings.json` is seeded by `preamble.md` Step 2 on first encounter. This skill is the only one that **edits** the file directly.
+
+## Custom Hints
+
+Hint compile + storage are documented in `skills/bigeye/references/hints.md`. This skill is the only writer for `custom_hints`.
+
+### Subcommand: `hints add`
+
+1. Hard-fail if `MCP_AVAILABLE=false` (per preamble Step 7.E).
+2. Ask: `Hint scope? (table / monitor)`.
+3. Ask for the target name. Resolve via MCP (`mcp__bigeye__list_tables` for tables; `mcp__bigeye__list_table_metrics` for monitors). On ambiguity → list candidates with IDs, user picks.
+4. Ask: `Describe the hint in plain text.`
+5. Run the compile prompt from `references/hints.md`. If ambiguous → ask follow-up. Refuse to save without a compiled shape.
+6. Show the compiled JSON. Ask: `Save this hint? (y/n)`.
+7. On `y`: append `{scope, target_id, target_name, raw, compiled, created_at: now()}` to `profiles[<active>].custom_hints` and write atomically.
+8. On `n`: discard, ask `Try again? (y/n)`. On `y` → restart at Step 4. On `n` → exit.
+
+### Subcommand: `hints list [<profile>]`
+
+Print a numbered table:
+
+```
+# | Scope   | Target            | Type             | Raw
+1 | table   | orders            | noise_threshold  | ignore deltas under 2% on row_count
+2 | monitor | metric#4421       | expected_pattern | weekend spikes are expected
+```
+
+If the profile has no hints → `No custom hints on profile {name}. Add via /bigeye-config hints add.`
+
+### Subcommand: `hints edit <index>`
+
+1. Load profile. Validate index is in range.
+2. Show the existing compiled form.
+3. Re-run `hints add` flow with the existing `raw` pre-filled (user can edit before compile).
+4. Replace at the same index. Write atomically.
+
+### Subcommand: `hints delete <index>`
+
+1. Load profile, validate index.
+2. Confirm: `Delete hint #{index}: {raw}? (y/n)`.
+3. On `y` → splice out, write atomically.
+
+## Virtual Tables
+
+### Subcommand: `virtual-tables add <name>`
+
+1. Hard-fail if `MCP_AVAILABLE=false`.
+2. Search via `mcp__bigeye__search_lineage_nodes` (or equivalent) filtered to virtual tables in the workspace. On ambiguity → list candidates with IDs, user picks.
+3. If `name` matches a regular table only → reject with: `` `{name}` is a regular table, not a virtual table. Add it via the wizard's table step instead. ``
+4. Append `{id, name}` to `scope.virtual_tables`. Write atomically.
+
+### Subcommand: `virtual-tables list`
+
+Print:
+
+```
+# | ID  | Name
+1 | 55  | active_users_30d
+```
+
+### Subcommand: `virtual-tables delete <name-or-id>`
+
+1. Resolve to one entry. Ambiguity → ask which.
+2. Splice out. Write atomically.
 
 ## Profile-Name Validation
 
@@ -133,31 +204,37 @@ On every read of `profiles.json`:
    mkdir -p ~/.bigeye
    ```
 5. Write `~/.claude/bigeye-plugin/profiles.json` with the final content.
-6. Add/replace the `[<profile>]` section in `~/.bigeye/config.ini` with `workspace_id = <id>` (leave all other sections untouched). If `~/.bigeye/config.ini` doesn't exist, create it with only the new section (no implicit `[DEFAULT]`).
-7. Verify CLI binding:
+6. Read the wizard's opt-in answer (from Wizard Flow Step 8 above; it's now part of the summary block per Task 6.6 demotion).
+
+   - **If the user answered `n` (default):** skip the `config.ini` write entirely. Skip Step 7 (CLI verify). Go to Step 8.
+   - **If the user answered `y`:** add/replace the `[<profile>]` section in `~/.bigeye/config.ini` with `workspace_id = <id>` (leave all other sections untouched). If `~/.bigeye/config.ini` doesn't exist, create it with only the new section (no implicit `[DEFAULT]`).
+
+7. **Only when opt-in answer is `y`:** verify CLI binding:
    ```bash
    bigeye -w <profile> configure list
    ```
    On non-zero exit, print the CLI error and a note:
    *"CLI workspace configured, but `bigeye configure list` failed. You likely need to set up `~/.bigeye/credentials` via `bigeye configure` or by following `bigeye-cli-install.md`."*
-8. Print:
+
+8. Print the success message — opt-in branch determines which paths are listed:
+
    ```
    Wrote profile `{name}` to:
      ~/.claude/bigeye-plugin/profiles.json (set as default)
-     ~/.bigeye/config.ini (section [{name}], workspace_id={id})
+     {if opt-in == y:}  ~/.bigeye/config.ini (section [{name}], workspace_id={id})
 
-   Try `/bigeye-config verify` to confirm setup, then `/bigeye-triage` for scoped issues.
+   Try `/bigeye-config verify` to confirm setup, then `/bigeye-roster` to walk today's issues.
    ```
 
 ### Subcommand: `add <name>`
 
 1. Validate `<name>` per Profile-Name Validation rules.
 2. Read existing `profiles.json`. If missing, tell the user to run `/bigeye-config init` first.
-3. If `[<name>]` already exists in `~/.bigeye/config.ini`, print current contents and ask:
-   *"A CLI section `[<name>]` already exists with workspace_id=<X>. Overwrite with the new profile's workspace_id? (y/n/pick-different-name)"*.
+3. **Only when the wizard's opt-in answer is `y`:** if `[<name>]` already exists in `~/.bigeye/config.ini`, print current contents and ask:
+   *"A CLI section `[<name>]` already exists with workspace_id=<X>. Overwrite with the new profile's workspace_id? (y/n/pick-different-name)"*. If opt-in is `n`, skip this step.
 4. Run the Wizard Flow.
 5. Merge new profile into `profiles`. Do not change `default_profile`.
-6. Add/replace `[<name>]` in `~/.bigeye/config.ini`.
+6. **Only when opt-in answer is `y`:** add/replace `[<name>]` in `~/.bigeye/config.ini`.
 7. Print confirmation.
 
 ### Subcommand: `switch <name>`
@@ -173,7 +250,7 @@ On every read of `profiles.json`:
 2. Show current values. Apply tag migration.
 3. Run Wizard Flow with current values pre-filled (let user press enter to keep each).
 4. Replace the profile. Do not change `default_profile`.
-5. Write `profiles.json`. Update `[<name>]` in `~/.bigeye/config.ini` with the new `workspace_id`.
+5. Write `profiles.json`. **Only when the wizard's opt-in answer is `y`:** update `[<name>]` in `~/.bigeye/config.ini` with the new `workspace_id`.
 6. Print confirmation.
 
 ### Subcommand: `delete <name>`
@@ -266,32 +343,22 @@ Always exit printing the table. Never fail the session.
 
 ## Wizard Flow
 
+Hard-fail if `MCP_AVAILABLE=false`. (The wizard depends on MCP for name → ID resolution.)
+
 Ask one question at a time. Show the running summary after each answer.
 
-1. **Workspace ID.** Ask: *"What's your BigEye workspace_id? (integer)"*. Validate integer. If `mcp__bigeye__list_data_sources` is available, call with `workspace_id: {answer}` to confirm reachability; warn but don't block on error.
-2. **Data sources.** Ask: *"Filter by data source? (y/n)"*.
-   - If yes and MCP is available: call `mcp__bigeye__list_data_sources`, show as numbered list, let user pick indices. Store resolved integer IDs in `data_source_ids`.
-   - If yes and MCP is absent: print *"MCP not available — enter warehouse IDs one per line (blank to finish). Find these in the BigEye UI under Settings → Sources."* Store the integers in `data_source_ids`.
-3. **Tables.** Ask: *"Filter by specific tables? (y/n)"*. If yes, ask for one name per line. Resolve via whichever MCP tool is available (`mcp__bigeye-knowledgebase__search_metadata` or `mcp__bigeye__list_tables`). Store names in `table_names` and resolved IDs in `table_ids`. Warn on unresolved names; don't block.
-4. **Schemas.** Ask: *"Filter by schema? (y/n)"*. Store in `schema_names`.
-5. **Summary and confirmation.** Show:
-   ```
-   Profile summary:
-     workspace_id: {...}
-     data_source_ids: [...]
-     table_names: [...]
-     table_ids: [...]
-     schema_names: [...]
+1. **Workspace ID.** Ask: `What's your BigEye workspace_id? (integer)`. Validate integer; confirm reachability via `mcp__bigeye__list_data_sources`.
+2. **Data sources.** Ask: `Filter by data source? (y/n)`. On yes: list available via MCP; user picks indices. Save resolved `[{id, name}]` to `scope.data_sources`.
+3. **Schemas.** Ask: `Filter by schema? (y/n)`. On yes: per data source, list available via MCP; user picks. Save `[{id, name}]`.
+4. **Tables.** Ask: `Filter by tables? (y/n)`. On yes: ask for one name per line. For each: MCP-resolve. On ambiguity → list candidates with IDs, user picks. On no match → warn, skip. Save `[{id, name}]` in `scope.tables`.
+5. **Virtual tables.** Ask: `Include virtual tables? (y/n)`. Same flow as tables but filtered to virtual-table type.
+6. **Monitored rules.** Ask: `Restrict to specific dimensions/rules? (y/n)`. On yes: list dimensions via `mcp__bigeye__list_dimensions`; user picks. Save `[{id, name}]`.
+7. **Custom hints.** Skip in the wizard — hints are added later via `/bigeye-config hints add` once tables exist.
+8. **Summary and confirmation.** Show the resolved profile JSON (truncated to first 5 entries per array). Ask:
+   1. `Save this profile? (y/n)`
+   2. If `y`: also ask `Also configure ~/.bigeye/config.ini for legacy CLI use? (y/n, default n)`. Pass this opt-in answer to the calling subcommand (init / add / edit), which uses it to gate the CLI section write per the `## Config Files` policy.
 
-   Will write:
-     ~/.claude/bigeye-plugin/profiles.json (profile '{name}')
-     ~/.bigeye/config.ini (section [{name}], workspace_id={id})
-
-   Save this profile? (y/n)
-   ```
-   On `n`, restart. On `y`, proceed to the caller's write step.
-
-Tags are NOT asked — the field is removed.
+On `y` proceed to the caller's write step.
 
 ## Notes
 

@@ -1,0 +1,12 @@
+{
+  "default_profile": "work-area",
+  "profiles": {
+    "work-area": {
+      "workspace_id": 42,
+      "data_source_ids": [17],
+      "table_ids": [],
+      "table_names": ["orders_main"],
+      "schema_names": []
+    }
+  }
+}

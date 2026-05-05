@@ -1,24 +1,22 @@
 # BigEye Data Observability Plugin
 
-A Claude Code plugin for managing BigEye monitoring at scale — built around two workflows (reactive triage and proactive table audits), backed by a persistent dashboard, and chained through atomic skills with consistent output and a local activity log.
+A Claude Code plugin focused on three workflows: a daily roster routine over open BigEye issues, single-monitor improve, and an interactive batch coverage proposal. Plus an ambient docs-grounding layer — every monitor / dimension / threshold explanation is cited back to the BigEye docs site.
 
-## What's new in 0.4.0
+## What's new in 0.5.0
 
-- **Two workflow commands** — `/bigeye-today` (reactive: triage → act → loop) and `/bigeye-table <name>` (proactive: audit a table → act → loop). These compose the existing atomic skills; you don't have to remember which command to chain next.
-- **`/bigeye` is now a dashboard.** One-pass snapshot of your scope: open issues, recent activity, per-table coverage, last actions. Non-interactive.
-- **Settings file.** User-editable values (Slack channel, severity thresholds, deploy defaults, default view) moved out of plugin files into `~/.claude/bigeye-plugin/settings.json`. Manage via `/bigeye-config settings show` / `settings edit <key> <value>`.
-- **Activity log.** A new `~/.claude/bigeye-plugin/state.json` records every skill action per issue and per table. No-arg forms (`/bigeye-rca`, `/bigeye-coverage`, `/bigeye-improve`, `/bigeye-table`) resume from where you left off.
-- **Standardized output.** Scope pill, Brief/Full sizing, `Next:`/`More:` footer, `Error / Fix / Why` blocks across every skill.
-- **Backwards-compatible on disk.** No command renames or removals. `profiles.json` and ticket templates are preserved on upgrade.
-
-If you customized the old `conventions.md` reference (Slack channel or severity thresholds) in a previous version, those edits are not migrated automatically — re-apply them via `/bigeye-config settings edit slack.channel '#your-channel'`, etc.
+- **Three pillars only on the user surface.** `/bigeye-roster`, `/bigeye-improve <monitor_id>`, `/bigeye-coverage <table>`.
+- **`/bigeye-roster` (new).** Daily routine: walk open issues, see facts + recommendation per issue, pick close / flaky-note / ticket / improve / hint / skip. Advisory only — never auto-closes.
+- **Custom hints.** Author per-table or per-monitor advisory rules in plain text via `/bigeye-config hints add`. Plugin compiles to a structured predicate before saving.
+- **Interactive coverage.** `/bigeye-coverage <table>` walks columns one at a time, shows the auto-detected profile, asks what the column actually holds, and proposes monitors that fit.
+- **MCP-only.** The BigEye CLI is no longer required for the user-facing pillars. CLI-based hidden skills remain on disk and callable.
+- **Doc grounding.** Every monitor / dimension explanation cites the matching BigEye docs URL.
 
 ## Requirements
 
 - Claude Code with plugin support
-- **Bigeye CLI 0.7+** installed and authenticated — see [`bigeye-cli-install.md`](bigeye-cli-install.md)
-- **Bigeye MCP server** (optional; unlocks RCA lineage, coverage scoring, incident creation, cluster detection, display-name lookup, and tag tracking) — see [`bigeye-mcp-install.md`](bigeye-mcp-install.md)
-- Slack MCP server (optional, for morning report notifications)
+- **BigEye MCP server** authenticated against your workspace — see [`bigeye-mcp-install.md`](bigeye-mcp-install.md)
+
+(Slack MCP optional, only used by the legacy morning-report agent.)
 
 ## Installation
 
@@ -27,49 +25,48 @@ If you customized the old `conventions.md` reference (Slack channel or severity 
 /plugin install bigeye-plugin@andriikoziichuk-bigeye-plugin
 ```
 
-After install: `/bigeye-config init` once to bind your workspace and scope filters.
+After install: `/bigeye-config init` to bind your workspace and scope.
 
-## Workflows (start here)
-
-| Command | When to use |
-|---|---|
-| `/bigeye` | Quick snapshot — what's the state of my scope right now? |
-| `/bigeye-today` | Something's broken — show me open issues, let me act. |
-| `/bigeye-table <name>` | Audit a table — coverage, weak monitors, gaps, table-scoped issues. |
-
-## Atomic skills (called by workflows; usable directly too)
+## Commands
 
 | Command | Description |
 |---|---|
-| `/bigeye-config [init/show/switch/add/edit/delete/verify/settings show/settings edit]` | Manage scope profiles (`profiles.json`) and user settings (`settings.json`). |
-| `/bigeye-triage [new/24h/<N>]` | Prioritized active issues, scope-filtered. |
-| `/bigeye-rca [issue]` | Root-cause analysis with lineage tracing. No-arg → resumes `last_issue`. |
-| `/bigeye-coverage [table]` | Dimension/column gaps + cheap weak-monitor scan. No-arg → resumes `last_table`. |
-| `/bigeye-improve [table]` | Deep monitor recommendations + heavy-mode SQL refinement loop. No-arg → resumes `last_table`. |
-| `/bigeye-deploy [target]` | Create monitors with confirmation gate. |
-| `/bigeye-incidents [ids/auto/add/close]` | Group related issues into incidents. |
-| `/bigeye-ticket [issue]` | Render a markdown vendor ticket from a user-authored template. |
+| `/bigeye-roster` | Daily routine — walk open issues, act on each |
+| `/bigeye-improve <monitor_id>` | Single-monitor improve — read-only proposal grounded in profile data and validated with SQL |
+| `/bigeye-coverage <table>` | Interactive batch proposal — per-column conversation, fitted monitors |
+| `/bigeye-config [subcmd]` | Profiles + custom hints + virtual tables + settings |
 
-## Scheduled agent
+## Daily flow
 
-Set up the daily morning report:
-```bash
-/schedule create "0 8 * * *" /bigeye-morning-report
 ```
-The agent calls `/bigeye-today --report-only` under the hood and posts to Slack (`settings.json.slack.channel`).
+/bigeye-roster                      # walk issues, advisory recs per issue
+   ↓
+[i]mprove on a flagged issue        # → /bigeye-improve <monitor_id>
+[c]lose / [f]laky-note inline       # MCP write per action
+[h]int adds advisory rule to profile
+   ↓
+/bigeye-coverage <table>            # find gaps, propose monitors
+   ↓
+/bigeye-deploy …                    # apply (callable, hidden surface)
+```
 
 ## Configuration
 
-**Scope profiles** (`~/.claude/bigeye-plugin/profiles.json`) — owned by `/bigeye-config`. Workspace + filter sets (data sources, tables, schemas). Per-invocation overrides: `--profile <name>`, `--no-scope`, `--workspace <id>`.
+**Profiles** (`~/.claude/bigeye-plugin/profiles.json`) — workspace + scope (data sources / schemas / tables / virtual tables) + monitored rules + custom hints. Owned by `/bigeye-config`. Per-invocation overrides: `--profile <name>`, `--no-scope`, `--workspace <id>`.
 
-**Settings** (`~/.claude/bigeye-plugin/settings.json`) — Slack channel, severity thresholds, deploy defaults, default view. Seeded on first run. Edit via `/bigeye-config settings show` / `settings edit <key> <value>`.
+**Settings** (`~/.claude/bigeye-plugin/settings.json`) — Slack channel (legacy), severity thresholds (legacy), `docs.base_url`, `roster.batch_size`, `roster.max_facts_per_issue`. Edit via `/bigeye-config settings show` / `settings edit <key> <value>`.
 
-**Activity log** (`~/.claude/bigeye-plugin/state.json`) — append-only, LRU-pruned (last 500 issues, last 100 tables). Backs no-arg fallbacks and the dashboard's "History" / "Recently closed" sections.
+**Activity log** (`~/.claude/bigeye-plugin/state.json`) — append-only, LRU-pruned. Powers roster resumability and the `(no-arg)` resume on coverage / improve.
 
-**Ticket templates** (`~/.claude/bigeye-plugin/ticket-templates/`) — managed via `/bigeye-ticket templates add/edit/delete/list`. Seeded with a `default.md` on first run.
+## Without MCP
 
-## How features degrade without MCP
+The user-facing pillars hard-fail with:
 
-The Bigeye CLI is the primary transport. MCP unlocks lineage, clustering, coverage scoring, incidents, display-name lookup, profile data, and tag tracking. When MCP is unavailable, every skill prints a one-line note and continues with whatever the CLI alone can show. Some operations hard-fail (coverage scoring, incident creation, display-name lookup) — those skills print a clear pointer to `bigeye-mcp-install.md`.
+```
+MCP unreachable. Try:
+  1. /mcp reconnect bigeye
+  2. Retry the command
+If still failing: see bigeye-mcp-install.md
+```
 
-Run `/bigeye-config verify` to see exactly what's enabled.
+Run `/bigeye-config verify` to see exactly what's reachable.
