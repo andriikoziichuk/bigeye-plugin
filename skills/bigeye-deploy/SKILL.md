@@ -1,6 +1,6 @@
 ---
 name: bigeye-deploy
-description: Use when the user wants to create monitors, deploy metrics, set up freshness checks, or close monitoring gaps identified by coverage analysis
+description: Internal — monitor deployer invoked only when explicitly typed as `/bigeye-deploy`. Do not auto-suggest. `/bigeye-improve` and `/bigeye-coverage` produce read-only proposals; user runs deploy separately.
 user-invocable: true
 ---
 

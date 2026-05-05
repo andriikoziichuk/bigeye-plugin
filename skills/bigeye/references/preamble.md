@@ -25,7 +25,22 @@ Scope config at ~/.claude/bigeye-plugin/profiles.json is malformed:
 Run `/bigeye-config init` to recreate it.
 ```
 
-If the loaded profile contains a non-empty `tags` field, strip it from the working copy in memory. Print once per session: *"Note: `tags` filter removed in this plugin release — stripping from profile `<name>` on read. Next `/bigeye-config edit <name>` will rewrite without the field."* Do not modify the file on disk until the wizard rewrites it.
+On load, normalize the profile into the v0.5 shape in memory:
+
+- `scope.data_sources`, `scope.schemas`, `scope.tables`, `scope.virtual_tables`, `monitored_rules` — arrays of `{id, name}` objects.
+- `custom_hints` — array of `{scope, target_id, target_name, raw, compiled, created_at}`.
+
+Backward-compat reads (do **not** rewrite the file on disk; only project to v0.5 in memory):
+
+- Legacy `data_source_ids: [int]` → `scope.data_sources: [{id, name: ""}]`.
+- Legacy `table_ids: [int]` and `table_names: [str]` → `scope.tables`. Names without IDs get `id: null` and are flagged "needs resolve".
+- Legacy `schema_names: [str]` → `scope.schemas: [{id: null, name}]`.
+- Legacy `tags` (any value) → strip from working copy, print the existing one-time tag-removal note.
+- Missing `monitored_rules` / `virtual_tables` / `custom_hints` → default to `[]`.
+
+Print once per session if any legacy keys were normalized:
+
+`Note: profile {name} uses pre-0.5 schema. Run \`/bigeye-config edit {name}\` to upgrade on disk.`
 
 ### 1.B Select the active profile
 
@@ -40,19 +55,21 @@ If the loaded profile contains a non-empty `tags` field, strip it from the worki
 ### 1.C Apply override flags
 
 - `--workspace <id>` replaces `workspace_id`.
-- `--no-scope` clears `data_source_ids`, `table_ids`, `table_names`, `schema_names`. `workspace_id` stays.
+- `--no-scope` clears `scope.data_sources`, `scope.tables`, `scope.schemas`, `scope.virtual_tables`, and `monitored_rules`. `workspace_id` stays.
 - `--profile` only affected which profile loaded in 1.B.
 
 These flags compose.
 
 ### 1.D Resolve table names to IDs (once)
 
-If the working profile has non-empty `table_names`:
-1. For each name, attempt to resolve via whichever MCP tool is available, in order:
+If the working profile has any entries in `scope.tables` with `id: null` (flagged "needs resolve" by Step 1.A's normalization):
+1. For each such entry, attempt to resolve via whichever MCP tool is available, in order:
    - `mcp__bigeye-knowledgebase__search_metadata`
    - `mcp__bigeye__list_tables` (or equivalent)
-2. Union the resolved IDs with `table_ids`.
+2. On success, set the entry's `id` in-place. The `name` is unchanged.
 3. Track unresolved names for the scope pill (Step 6).
+
+The same flow applies to `scope.virtual_tables` entries with `id: null` (use a virtual-table-aware lookup).
 
 Do this **once** per invocation — not before every MCP call.
 
@@ -63,13 +80,15 @@ When calling any MCP tool that accepts these parameters, include only non-empty 
 | Profile field | MCP parameter |
 |---|---|
 | `workspace_id` | `workspace_id` |
-| `data_source_ids` | `data_source_ids` (or `source_ids` if that's what the tool's schema accepts) |
-| `table_ids` (incl. resolved `table_names`) | `table_ids` |
-| `schema_names` | `schema_names` |
+| `scope.data_sources[*].id` | `data_source_ids` (or `source_ids` if the tool requires it) |
+| `scope.tables[*].id` | `table_ids` |
+| `scope.virtual_tables[*].id` | `virtual_table_ids` (when the tool accepts it; otherwise omit and document) |
+| `scope.schemas[*].name` | `schema_names` |
+| `monitored_rules[*].id` | `dimension_ids` (when the tool accepts it; else apply post-filter) |
 
 Omit any parameter whose field is empty.
 
-For CLI calls, use the equivalent flags: `-wid` per `data_source_id`, `-sn` per `schema_name`, `-tid` per `table_id`. The CLI does **not** accept a `--tag` flag and does **not** accept a table-name filter — table filtering against the issue list is done post-fetch.
+The plugin is MCP-only for the v0.5 user-facing pillars. CLI fallback paths in this preamble apply only to legacy hidden skills.
 
 ---
 
@@ -122,35 +141,7 @@ Why:   {parse error}
 
 ## Step 3 — Bind CLI workspace
 
-After Step 1 has selected the active profile (e.g., `work-area`), every CLI invocation MUST pass `-w work-area`. Always pass it explicitly, even when it matches the CLI's `DEFAULT` — explicit `-w` keeps transcripts self-describing.
-
-CLI invocation wrapper (use this exact pattern for any CLI call that produces output files):
-
-```bash
-TMPDIR=$(mktemp -d -t bigeye-XXXXXX)
-trap 'rm -rf "$TMPDIR"' EXIT
-bigeye -w <profile> <subcommand> <subargs> -op "$TMPDIR"
-# parse JSON files under $TMPDIR
-```
-
-Rules:
-- Always `mktemp -d`, never a fixed path.
-- Cleanup the tempdir on success. On JSON parse failure, **do not delete it** — print the path for debugging instead.
-- Timeouts: 60s single-issue reads, 180s bulk dumps, 300s `bigconfig apply`.
-- On non-zero exit: capture stderr and print the exact command + error to the user via the `Error / Fix / Why` block defined in `output.md`.
-
-JSON output file shapes (skills read files, never stdout):
-
-| Command | Files produced | Key fields |
-|---|---|---|
-| `issues get-issues` | one JSON per issue, named by internal ID | `id`, `displayName`, `status`, `metricConfiguration.metricType`, `dimensions[]`, `events[]`, `tableName`, `columnName`, `openedAt` |
-| `metric get-info` | one JSON per metric | `id`, `metricType`, `tableName`, `columnName`, `schedule`, `recentRuns[]` |
-| `catalog get-metric-info` | per-metric JSONs under warehouse/schema/table tree | same as `metric get-info` |
-| `catalog get-table-info` | per-table JSONs | `id`, `schemaName`, `tableName`, `columns[]`, `metricCount`, `warehouseType` |
-| `bigconfig plan` | report file + fixme files | report summary for confirmation gate |
-| `bigconfig apply` | apply report | success / failure counts; created metric IDs |
-
-Exact filenames are workspace-dependent; skills enumerate via `ls "$TMPDIR"` and parse the union of JSON files.
+For CLI fallback (hidden skills only) see "CLI fallback" at the bottom of this file.
 
 ---
 
@@ -242,6 +233,7 @@ Populate `{feature_name}` from the per-skill table:
 | `bigeye-today` | (delegates — uses each skill's feature_name) |
 | `bigeye-table` | dimension coverage scoring (for the status card) |
 | `bigeye-morning-report` | cluster detection / coverage scoring |
+| `bigeye-roster` | hard-fail per 7.E (no soft warning) |
 
 If the skill has a CLI-only workaround, append it as a second `Fix:` line. Continue or hard-fail per the per-skill behavior matrix in 7.C.
 
@@ -262,6 +254,9 @@ If the skill has a CLI-only workaround, append it as a second `Fix:` line. Conti
 | `bigeye-today` | issue listing | clustering, display-name | cluster column shows `—`; otherwise as triage |
 | `bigeye-table` | issue listing on the table | coverage, name resolution | bare-name resolution hard-fails (require fully-qualified); coverage shows `—` |
 | `bigeye-morning-report` | issue listing | clustering, coverage | cluster/coverage sections replaced with notes |
+| `bigeye-roster` | — | full issue analysis routine | hard-fail per 7.E — no CLI fallback |
+
+**Note**: `bigeye-roster`, `bigeye-improve`, and `bigeye-coverage` (v0.5 pillars) do NOT use the soft-warning path described above — they hard-fail per Step 7.E.
 
 ### 7.D Error-handling rules
 
@@ -288,6 +283,17 @@ Use the `Error / Fix / Why` block defined in `output.md` for every user-facing e
 - Partial write success: report success count + failed items; skip chaining suggestions until fixed.
 
 Under `--verbose`, append the `Details:` block per `output.md` §Error format.
+
+### 7.E MCP-required pillars
+
+The skills `bigeye-roster`, `bigeye-improve`, `bigeye-coverage`, and `bigeye-config` (for hint compile / name resolution) require MCP. When `MCP_AVAILABLE=false`, those skills MUST hard-fail by printing:
+
+    MCP unreachable. Try:
+      1. /mcp reconnect bigeye
+      2. Retry the command
+    If still failing: see bigeye-mcp-install.md
+
+and stop. Do not attempt CLI fallback for these pillars.
 
 ---
 
@@ -385,3 +391,41 @@ If `true`, skip silently. Prints exactly once across the user's lifetime of runn
 ## End of preamble
 
 Skills resume their own logic after Step 8 setup. State writes (8.B) happen at the end of the skill's successful run, not at the start.
+
+---
+
+## CLI fallback (legacy hidden skills only)
+
+These steps apply ONLY when a hidden skill is invoked directly. The v0.5 user-facing pillars are MCP-only — they never reach this section.
+
+### Bind CLI workspace (Step 3 detail)
+
+After Step 1 has selected the active profile (e.g., `work-area`), every CLI invocation MUST pass `-w work-area`. Always pass it explicitly, even when it matches the CLI's `DEFAULT` — explicit `-w` keeps transcripts self-describing.
+
+CLI invocation wrapper (use this exact pattern for any CLI call that produces output files):
+
+```bash
+TMPDIR=$(mktemp -d -t bigeye-XXXXXX)
+trap 'rm -rf "$TMPDIR"' EXIT
+bigeye -w <profile> <subcommand> <subargs> -op "$TMPDIR"
+# parse JSON files under $TMPDIR
+```
+
+Rules:
+- Always `mktemp -d`, never a fixed path.
+- Cleanup the tempdir on success. On JSON parse failure, **do not delete it** — print the path for debugging instead.
+- Timeouts: 60s single-issue reads, 180s bulk dumps, 300s `bigconfig apply`.
+- On non-zero exit: capture stderr and print the exact command + error to the user via the `Error / Fix / Why` block defined in `output.md`.
+
+JSON output file shapes (skills read files, never stdout):
+
+| Command | Files produced | Key fields |
+|---|---|---|
+| `issues get-issues` | one JSON per issue, named by internal ID | `id`, `displayName`, `status`, `metricConfiguration.metricType`, `dimensions[]`, `events[]`, `tableName`, `columnName`, `openedAt` |
+| `metric get-info` | one JSON per metric | `id`, `metricType`, `tableName`, `columnName`, `schedule`, `recentRuns[]` |
+| `catalog get-metric-info` | per-metric JSONs under warehouse/schema/table tree | same as `metric get-info` |
+| `catalog get-table-info` | per-table JSONs | `id`, `schemaName`, `tableName`, `columns[]`, `metricCount`, `warehouseType` |
+| `bigconfig plan` | report file + fixme files | report summary for confirmation gate |
+| `bigconfig apply` | apply report | success / failure counts; created metric IDs |
+
+Exact filenames are workspace-dependent; skills enumerate via `ls "$TMPDIR"` and parse the union of JSON files.

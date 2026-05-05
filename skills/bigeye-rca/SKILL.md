@@ -1,6 +1,6 @@
 ---
 name: bigeye-rca
-description: Use when the user wants to investigate why a BigEye issue is happening, trace root causes through lineage, or debug a specific data quality problem
+description: Internal — root-cause-analysis helper invoked only when explicitly typed as `/bigeye-rca`. Do not auto-suggest. Roster recommends `improve` or `ticket` instead.
 user-invocable: true
 ---
 

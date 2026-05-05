@@ -1,0 +1,10 @@
+{
+  "_meta": { "version": "0.5.0", "upgrade_seen": false },
+  "slack": { "channel": "#data-quality-alerts", "mention_group": "@data-oncall", "critical_only": true },
+  "severity": { "critical_ack_hours": 4, "critical_related_count": 3, "warning_ack_hours": 24 },
+  "triage": { "max_issues": 50, "default_brief_rows": 10 },
+  "deploy": { "default_lookback_days": 7, "tag": "deployed-by-plugin" },
+  "view": { "default_view": "brief" },
+  "docs": { "base_url": "https://docs.bigeye.com" },
+  "roster": { "batch_size": 5, "max_facts_per_issue": 6 }
+}

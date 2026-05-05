@@ -1,0 +1,25 @@
+{
+  "active_profile": "prod",
+  "profiles": {
+    "prod": {
+      "workspace_id": 123,
+      "scope": {
+        "data_sources":   [{"id": 12, "name": "snowflake_prod"}],
+        "schemas":        [{"id": 34, "name": "analytics"}],
+        "tables":         [{"id": 101, "name": "orders"}],
+        "virtual_tables": [{"id": 55, "name": "active_users_30d"}]
+      },
+      "monitored_rules": [{"id": 1, "name": "freshness"}],
+      "custom_hints": [
+        {
+          "scope": "table",
+          "target_id": 101,
+          "target_name": "orders",
+          "raw": "ignore deltas under 2% on row_count",
+          "compiled": {"type": "noise_threshold", "metric": "row_count", "delta_pct_max": 2.0},
+          "created_at": "2026-05-05T10:00:00Z"
+        }
+      ]
+    }
+  }
+}

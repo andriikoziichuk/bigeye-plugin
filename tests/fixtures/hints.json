@@ -1,0 +1,33 @@
+[
+  {
+    "raw": "ignore deltas under 2% on row_count",
+    "expected_compiled": {
+      "type": "noise_threshold",
+      "metric": "row_count",
+      "delta_pct_max": 2.0
+    }
+  },
+  {
+    "raw": "noise floor of 0.5% for null_pct",
+    "expected_compiled": {
+      "type": "noise_threshold",
+      "metric": "null_pct",
+      "delta_pct_max": 0.5
+    }
+  },
+  {
+    "raw": "weekend spikes are expected for freshness_seconds",
+    "expected_compiled": {
+      "type": "expected_pattern",
+      "when": "weekend",
+      "metric": "freshness_seconds"
+    }
+  },
+  {
+    "raw": "team renames cohorts every Monday morning",
+    "expected_compiled": {
+      "type": "context",
+      "text": "team renames cohorts every Monday morning"
+    }
+  }
+]

@@ -1,6 +1,6 @@
 ---
 name: bigeye-ticket
-description: Use when the user wants to draft a vendor ticket, write a Service Request, or generate a markdown report for a data vendor about a BigEye issue. Render-only — no external ticketing system writes.
+description: Internal — markdown ticket renderer invoked by `/bigeye-roster` action `t` or directly when explicitly typed as `/bigeye-ticket <issue>`. Do not auto-suggest.
 user-invocable: true
 ---
 

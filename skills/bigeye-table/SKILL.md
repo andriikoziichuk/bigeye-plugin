@@ -1,6 +1,6 @@
 ---
 name: bigeye-table
-description: Use when the user wants to audit a single table — coverage, weak monitors, gaps, or table-scoped issues. Proactive workflow.
+description: Internal — table audit helper invoked only when explicitly typed as `/bigeye-table`. Do not auto-suggest. Use `/bigeye-coverage <table>` and `/bigeye-improve <monitor_id>` instead.
 user-invocable: true
 ---
 
