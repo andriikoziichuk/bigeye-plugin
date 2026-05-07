@@ -101,7 +101,7 @@ If the file is missing, seed it silently with the defaults below and write atomi
 Defaults:
 ```json
 {
-  "_meta": { "version": "0.4.0", "upgrade_seen": false },
+  "_meta": { "version": "0.5.0", "upgrade_seen": false },
   "slack": {
     "channel": "#data-quality-alerts",
     "mention_group": "@data-oncall",
@@ -122,6 +122,13 @@ Defaults:
   },
   "view": {
     "default_view": "brief"
+  },
+  "docs": {
+    "base_url": "https://docs.bigeye.com"
+  },
+  "roster": {
+    "batch_size": 5,
+    "max_facts_per_issue": 6
   }
 }
 ```
@@ -379,12 +386,17 @@ After settings load (Step 2) and before any skill output, check `settings.json._
 
 1. Print exactly:
    ```
-   Upgraded to bigeye-plugin 0.4.0. New: /bigeye (dashboard), /bigeye-today, /bigeye-table.
-   Your profiles and templates are preserved. See README or run /bigeye for a tour.
+   Upgraded to bigeye-plugin 0.5.0. User-facing surface narrowed to:
+     /bigeye-roster (daily routine)
+     /bigeye-improve <monitor_id> (single-monitor improve)
+     /bigeye-coverage <table> (interactive batch coverage)
+     /bigeye-config (profiles, hints, virtual tables)
+   Hidden commands (e.g. /bigeye-rca, /bigeye-today, /bigeye-table) remain callable.
+   See README for details.
    ```
 2. Set `_meta.upgrade_seen` to `true`. Write atomically.
 
-If `true`, skip silently. Prints exactly once across the user's lifetime of running 0.4.0.
+If `true`, skip silently. Prints exactly once across the user's lifetime of running 0.5.0.
 
 ---
 

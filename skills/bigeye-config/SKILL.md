@@ -76,12 +76,14 @@ The plugin no longer requires the BigEye CLI for the v0.5 user-facing pillars. T
 
 ```json
 {
-  "_meta": { "version": "0.4.0", "upgrade_seen": false },
+  "_meta": { "version": "0.5.0", "upgrade_seen": false },
   "slack": { "channel": "#data-quality-alerts", "mention_group": "@data-oncall", "critical_only": true },
   "severity": { "critical_ack_hours": 4, "critical_related_count": 3, "warning_ack_hours": 24 },
   "triage": { "max_issues": 50, "default_brief_rows": 10 },
   "deploy": { "default_lookback_days": 7, "tag": "deployed-by-plugin" },
-  "view": { "default_view": "brief" }
+  "view": { "default_view": "brief" },
+  "docs": { "base_url": "https://docs.bigeye.com" },
+  "roster": { "batch_size": 5, "max_facts_per_issue": 6 }
 }
 ```
 
@@ -272,7 +274,7 @@ On every read of `profiles.json`:
 
    ~/.claude/bigeye-plugin/settings.json
 
-   {pretty-printed JSON, 2-space indent, keys in canonical order: _meta, slack, severity, triage, deploy, view}
+   {pretty-printed JSON, 2-space indent, keys in canonical order: _meta, slack, severity, triage, deploy, view, docs, roster}
    ```
 3. Below the JSON, print this fixed line:
    ```
