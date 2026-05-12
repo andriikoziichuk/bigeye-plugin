@@ -1,0 +1,6 @@
+name: bad_unique_id
+version: 1
+priority: 50
+description: minimal valid pack
+tags: [test-tag]
+covers: [freshness]

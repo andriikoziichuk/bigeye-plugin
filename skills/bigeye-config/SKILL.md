@@ -32,6 +32,12 @@ Parse `$ARGUMENTS` (space-separated). First token is the subcommand; anything af
 | `virtual-tables add <name>` | MCP-resolve a virtual table by name → save `{id, name}` to active profile |
 | `virtual-tables list` | List virtual tables on the active profile |
 | `virtual-tables delete <name-or-id>` | Remove a virtual table from the active profile |
+| `snow show` | Print active profile's `snow` block + the connection it maps to in `~/.snowflake/config.toml` |
+| `snow set <profile>` | Set `snow.profile` on active profile. Verify the connection exists. Run `snow connection test -c <profile>` |
+| `snow set <profile> --warehouse <w>` | Same + set `default_warehouse` |
+| `snow set <profile> --role <r>` | Same + set `default_role` |
+| `snow unset` | Remove `snow` block from active profile |
+| `snow verify` | Run `snow connection test` + canary `SELECT 1` + parse `SHOW GRANTS` for write privileges. Print PASS/FAIL per check |
 
 ## Config Files
 
@@ -52,13 +58,20 @@ Parse `$ARGUMENTS` (space-separated). First token is the subcommand; anything af
         "virtual_tables": []
       },
       "monitored_rules": [{"id": 1, "name": "freshness"}],
-      "custom_hints": []
+      "custom_hints": [],
+      "snow": {
+        "profile": "ro-analytics",
+        "default_warehouse": "ANALYTICS_RO_WH",
+        "default_role": "DATA_READER"
+      }
     }
   }
 }
 ```
 
 `active_profile` (formerly `default_profile`) keeps backward-compatible read; new writes use `active_profile`.
+
+The `snow` block is optional. Required by `/bigeye-investigate`; missing → /bigeye-investigate prints "No Snowflake profile configured. Run /bigeye-config snow set <profile>." and stops.
 
 The plugin no longer requires the BigEye CLI for the v0.5 user-facing pillars. The CLI section in `~/.bigeye/config.ini` is **only** written when the user opts into legacy CLI integration (kept for hidden skills). When the wizard finishes, ask: `Also configure ~/.bigeye/config.ini for legacy CLI use? (y/n, default n)`. Default `n` skips the file write entirely.
 
@@ -361,6 +374,82 @@ Ask one question at a time. Show the running summary after each answer.
    2. If `y`: also ask `Also configure ~/.bigeye/config.ini for legacy CLI use? (y/n, default n)`. Pass this opt-in answer to the calling subcommand (init / add / edit), which uses it to gate the CLI section write per the `## Config Files` policy.
 
 On `y` proceed to the caller's write step.
+
+## Snow subcommands
+
+Owns the `profiles[<active>].snow` block. Wraps the Snowflake `snow` CLI.
+
+### `snow show`
+
+```bash
+snow connection list --format json
+```
+
+Read `profiles.json[active].snow`. Print as a small table:
+
+```
+Active profile: <name>
+  snow.profile           : <profile> (in ~/.snowflake/config.toml)
+  snow.default_warehouse : <w | "(unset; relies on ~/.snowflake/config.toml)">
+  snow.default_role      : <r | "(unset)">
+
+Connection test: ✓ pass | ✗ fail (<stderr>)
+```
+
+### `snow set <profile> [--warehouse <w>] [--role <r>]`
+
+1. Verify the connection name exists:
+   ```bash
+   snow connection list --format json | python -c "import json,sys; ns=[c['connection_name'] for c in json.load(sys.stdin)]; print('OK' if '<profile>' in ns else 'MISSING')"
+   ```
+   `MISSING` → print "Error: connection `<profile>` not found in ~/.snowflake/config.toml. Fix: add it under `[connections.<profile>]`." and stop.
+2. Run `snow connection test -c <profile>`. Non-zero → print stderr + "Fix: check the connection block in `~/.snowflake/config.toml`." and stop.
+3. Update `profiles.json[active].snow = { profile, default_warehouse?, default_role? }`. Preserve unaffected fields.
+4. Print confirmation.
+
+### `snow unset`
+
+Remove the `snow` block from `profiles.json[active]`. Confirm before write.
+
+### `snow verify`
+
+Run four checks, print PASS/FAIL per line:
+
+1. `snow connection test -c <snow.profile>` → PASS on rc=0.
+2. Run `SELECT 1` via:
+   ```bash
+   snow sql -c <snow.profile> --format json -q "SELECT 1 AS x"
+   ```
+   PASS on rc=0 AND parsed rows == `[{"x":1}]`.
+3. `SHOW GRANTS TO ROLE <current_role>` (resolve role from `snow.default_role` or `snow sql -c <p> -q "SELECT CURRENT_ROLE()"`). Parse output via:
+   ```bash
+   snow sql -c <p> --format json -q "SHOW GRANTS TO ROLE <role>"
+   ```
+   Scan privileges for any of: `INSERT|UPDATE|DELETE|TRUNCATE|CREATE|DROP|ALTER|MERGE|GRANT|REVOKE`.
+   PASS if none found; WARN otherwise. Never FAIL — warn-only.
+4. Print summary line.
+
+WARN message body (when write grants detected):
+```
+⚠️  warn: role <role> has write privileges on <object_count> objects.
+   The engine's SQL guard will still reject non-SELECT queries, but a
+   dedicated read-only role is strongly recommended.
+
+   Example role setup (run as ACCOUNTADMIN once):
+     CREATE ROLE DATA_READER;
+     GRANT USAGE ON WAREHOUSE <wh>      TO ROLE DATA_READER;
+     GRANT USAGE ON DATABASE <db>       TO ROLE DATA_READER;
+     GRANT USAGE ON ALL SCHEMAS IN ...  TO ROLE DATA_READER;
+     GRANT SELECT ON ALL TABLES IN ...  TO ROLE DATA_READER;
+     GRANT ROLE DATA_READER             TO USER <you>;
+```
+
+## Errors
+
+| Condition | Block |
+|---|---|
+| `snow` binary not installed | `Error: snow CLI not on PATH.` / `Fix: install Snowflake CLI (https://docs.snowflake.com/developer-guide/snowflake-cli/installation/installation).` / `Why: required for /bigeye-investigate.` |
+| `~/.snowflake/config.toml` missing | `Error: ~/.snowflake/config.toml missing.` / `Fix: run snow connection add.` / `Why: snow.profile must reference a connection there.` |
 
 ## Notes
 

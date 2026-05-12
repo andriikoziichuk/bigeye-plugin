@@ -1,0 +1,6 @@
+name: bad_filter_mirroring
+version: 1
+priority: 50
+description: minimal valid pack
+tags: [test-tag]
+covers: [freshness]

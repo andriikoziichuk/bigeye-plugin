@@ -2,6 +2,13 @@
 
 A Claude Code plugin focused on three workflows: a daily roster routine over open BigEye issues, single-monitor improve, and an interactive batch coverage proposal. Plus an ambient docs-grounding layer — every monitor / dimension / threshold explanation is cited back to the BigEye docs site.
 
+## What's new in 0.6.0
+
+- **`/bigeye-investigate <issue>` (new).** Read-only Snowflake investigation, pack-driven, confidence-rated memo + paste-ready ticket body. Dispatches the `bigeye-investigator` subagent.
+- **Pack format + `/bigeye-pack new <name>`.** Domain knowledge (hypotheses, playbooks, manual verification) lives in `~/.claude/bigeye-plugin/packs/<name>/`, loaded by BigEye tag.
+- **`/bigeye-config snow set/show/unset/verify`.** Bind a Snowflake `snow` CLI connection to each BigEye profile. `verify` warns if the role has write grants.
+- **Roster `[v]` investigate action.** Recommended on diagnosable-shape issues.
+
 ## What's new in 0.5.0
 
 - **Three pillars only on the user surface.** `/bigeye-roster`, `/bigeye-improve <monitor_id>`, `/bigeye-coverage <table>`.
@@ -35,6 +42,8 @@ After install: `/bigeye-config init` to bind your workspace and scope.
 | `/bigeye-improve <monitor_id>` | Single-monitor improve — read-only proposal grounded in profile data and validated with SQL |
 | `/bigeye-coverage <table>` | Interactive batch proposal — per-column conversation, fitted monitors |
 | `/bigeye-config [subcmd]` | Profiles + custom hints + virtual tables + settings |
+| `/bigeye-investigate <issue>` | Read-only Snowflake-backed root-cause investigation. Returns memo + paste-ready ticket body |
+| `/bigeye-pack new <name>` | Scaffold a new domain pack interactively. Includes `lint`, `list` |
 
 ## Daily flow
 
@@ -42,7 +51,7 @@ After install: `/bigeye-config init` to bind your workspace and scope.
 /bigeye-roster                      # walk issues, advisory recs per issue
    ↓
 [i]mprove on a flagged issue        # → /bigeye-improve <monitor_id>
-[c]lose / [f]laky-note inline       # MCP write per action
+[c]lose / [f]laky-note / [v]nvestigate inline  # MCP write per action
 [h]int adds advisory rule to profile
    ↓
 /bigeye-coverage <table>            # find gaps, propose monitors

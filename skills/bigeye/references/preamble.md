@@ -162,6 +162,19 @@ Once per skill run, after Step 3:
 
 Skills MUST check `MCP_AVAILABLE` before every MCP call. Do not retry MCP calls later in the same run — the result is authoritative.
 
+### Setup verification checklist (for `/bigeye-config verify`)
+
+When `/bigeye-config verify` runs its health check, it produces a numbered checklist. The five points are:
+
+1. CLI installed — `which bigeye`.
+2. CLI workspace configured — active profile's `workspace_id` in `~/.bigeye/config.ini`.
+3. CLI auth — `~/.bigeye/credentials` readable.
+4. MCP reachability — `mcp__bigeye__list_data_sources` probe (this Step).
+5. Snowflake — run `/bigeye-config snow verify` and condense to one line:
+   `✓ snow profile=<profile>, role=<role> (read-only ✓)` on PASS.
+   `⚠ snow profile=<profile>, role=<role> (write grants detected)` on WARN.
+   `✗ snow profile=<profile> (unreachable: <stderr>)` on FAIL.
+
 ---
 
 ## Step 5 — Apply per-skill scope rules
@@ -329,6 +342,15 @@ Schema:
   "last_issue": "10921",
   "last_table": "warehouse.public.orders",
   "last_workflow": "today",
+  "last_investigation": {
+    "issue": "10921",
+    "request_id": "01HX...",
+    "at": "2026-05-12T15:42:00Z",
+    "confidence": "high",
+    "pack_used": "sov",
+    "diagnosis_id": "amazon-category-restructure",
+    "trace_path": "investigations/10921-2026-05-12T15-42-00Z.json"
+  },
   "issues": {
     "10921": {
       "internal_id": 42,
@@ -337,7 +359,8 @@ Schema:
       "last_seen": "2026-04-24T14:03:00Z",
       "status_when_last_seen": "ACKNOWLEDGED",
       "actions": [
-        { "skill": "bigeye-rca", "at": "2026-04-20T09:14:00Z" }
+        { "skill": "bigeye-rca", "at": "2026-04-20T09:14:00Z" },
+        { "skill": "bigeye-investigate", "at": "2026-05-12T15:42:00Z", "confidence": "high" }
       ]
     }
   },
@@ -352,6 +375,8 @@ Schema:
   }
 }
 ```
+
+Missing `last_investigation` is treated as null (no prior investigation). Any skill writing state.json MUST preserve unknown fields.
 
 Per-skill writes (atomic skills):
 

@@ -1,0 +1,9 @@
+{
+  "request_id": "01HX-test-volume-default",
+  "issue_ref": "10002",
+  "internal_id_flag": false,
+  "snow_profile": "ro-analytics",
+  "pack_override": null,
+  "budget": 10,
+  "scope": { "data_sources": [], "schemas": [], "tables": [], "virtual_tables": [] }
+}

@@ -1,0 +1,14 @@
+name: _default
+version: 1
+priority: 0
+description: Generic fallback pack. Used when no user pack matches the issue's BigEye tags.
+tags: []
+budget: 10
+widening_threshold: 10000000
+covers:
+  - freshness
+  - volume
+  - "null"
+  - distribution
+  - schema
+  - custom

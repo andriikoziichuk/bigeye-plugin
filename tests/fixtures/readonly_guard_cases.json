@@ -1,0 +1,50 @@
+[
+  { "sql": "SELECT 1", "ok": true },
+  { "sql": "select * from t", "ok": true },
+  { "sql": "WITH cte AS (SELECT 1) SELECT * FROM cte", "ok": true },
+  { "sql": "select a, b /* comment */ from t where c = 1", "ok": true },
+  { "sql": "select * from t limit 100;", "ok": true },
+  { "sql": "  \n\tselect 1\n", "ok": true },
+  { "sql": "SeLeCt 1 FrOm T", "ok": true },
+  { "sql": "select * from t -- trailing\n", "ok": true },
+  { "sql": "select dropdown, t_drop, drophint_col from t", "ok": true },
+
+  { "sql": "INSERT INTO t VALUES (1)", "ok": false, "reason_contains": "insert" },
+  { "sql": "update t set a=1", "ok": false, "reason_contains": "update" },
+  { "sql": "DELETE FROM t", "ok": false, "reason_contains": "delete" },
+  { "sql": "DROP TABLE t", "ok": false, "reason_contains": "drop" },
+  { "sql": "ALTER TABLE t ADD COLUMN x INT", "ok": false, "reason_contains": "alter" },
+  { "sql": "MERGE INTO t USING s ON 1=1", "ok": false, "reason_contains": "merge" },
+  { "sql": "truncate t", "ok": false, "reason_contains": "truncate" },
+  { "sql": "grant select on t to role r", "ok": false, "reason_contains": "grant" },
+  { "sql": "REVOKE select on t from role r", "ok": false, "reason_contains": "revoke" },
+  { "sql": "COPY INTO @stage FROM t", "ok": false, "reason_contains": "copy" },
+  { "sql": "PUT file://a.csv @stage", "ok": false, "reason_contains": "put" },
+  { "sql": "GET @stage file://", "ok": false, "reason_contains": "get" },
+  { "sql": "use database d", "ok": false, "reason_contains": "use" },
+  { "sql": "call my_proc()", "ok": false, "reason_contains": "call" },
+  { "sql": "EXECUTE IMMEDIATE 'SELECT 1'", "ok": false, "reason_contains": "execute" },
+
+  { "sql": "SELECT 1; DROP TABLE t", "ok": false, "reason_contains": "statements" },
+  { "sql": "SELECT 1; SELECT 2", "ok": false, "reason_contains": "statements" },
+  { "sql": "SELECT;DROP TABLE t", "ok": false, "reason_contains": "drop" },
+
+  { "sql": "SELECT * FROM t /* ; drop table t */", "ok": true },
+  { "sql": "select * into new_t from t", "ok": false, "reason_contains": "into" },
+  { "sql": "select * from t ; -- nothing\n drop table t", "ok": false, "reason_contains": "drop" },
+  { "sql": "\nUPDATE t\n SET a=1", "ok": false, "reason_contains": "update" },
+  { "sql": "SeLeCt * iNtO new FROM t", "ok": false, "reason_contains": "into" },
+
+  { "sql": "EXPLAIN SELECT 1", "ok": false, "reason_contains": "first token" },
+  { "sql": "DESC TABLE t", "ok": false, "reason_contains": "first token" },
+  { "sql": "SHOW TABLES", "ok": false, "reason_contains": "first token" },
+
+  { "sql": "select * from t,drop table t", "ok": false, "reason_contains": "drop" },
+  { "sql": "SELECT a,DROP TABLE u", "ok": false, "reason_contains": "drop" },
+  { "sql": "select * from t.drop", "ok": false, "reason_contains": "drop" },
+  { "sql": "select * from t(drop)", "ok": false, "reason_contains": "drop" },
+
+  { "sql": "", "ok": false, "reason_contains": "empty" },
+  { "sql": "   \n\t  ", "ok": false, "reason_contains": "empty" },
+  { "sql": "-- only comment with drop in it\n", "ok": false, "reason_contains": "empty" }
+]
