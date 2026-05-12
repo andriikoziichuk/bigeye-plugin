@@ -18,7 +18,7 @@ The hydrated view is passed to the substituter as a single flat dict (with dotte
 ## Memo template (`render_memo`)
 
 ```markdown
-## Investigation — I-{{display_name}}
+## Investigation — {{display_name}}
 
 **Root cause:** {{diagnosis.hypothesis.label}} _({{diagnosis.confidence}} confidence)_
 
@@ -29,14 +29,16 @@ The hydrated view is passed to the substituter as a single flat dict (with dotte
 - Metric: `{{issue_snapshot.metric_type}}`{{#column}} on column `{{column}}`{{/column}}
 - Severity: {{issue_snapshot.severity}} | Priority: {{issue_snapshot.priority}} | Status: {{issue_snapshot.status}}
 - Opened: {{issue_snapshot.opened_at}}
+{{#issue_snapshot.threshold}}
 - Current value: {{issue_snapshot.current_value}} (threshold: {{issue_snapshot.threshold.kind}}={{issue_snapshot.threshold.value}})
+{{/issue_snapshot.threshold}}
 - Pack: `{{pack_used}}` | Snowflake role: `{{snow_role}}`
 
 ### Investigation trace
 | # | Hypothesis | Action | Result |
 |---|---|---|---|
 {{#trace.queries}}
-| {{query_idx}} | `{{hypothesis_id}}` | {{kind}} | {{result_summary}} |
+| {{query_idx}} | {{display_label}} | {{kind}} | {{result_summary}} |
 {{/trace.queries}}
 
 Budget: {{budget_used}}/{{request.budget}} queries used.
@@ -113,3 +115,4 @@ Renderer note: `issue_snapshot.metric_timeline` is hydrated upstream by the engi
 - `{{.}}` — current iteration value (used inside `{{#list}}`).
 
 The renderer is a small string-substituter, not a full Mustache implementation. v1 implementation hand-rolls these five patterns. If a section requires logic beyond these, add a derived field upstream in the engine, not in the template.
+- **`display_label` fallback.** When a `query` TraceEvent lacks `display_label` (older trace files), the renderer substitutes `` `<hypothesis_id>` `` (backtick-wrapped) instead. The substituter implementation is responsible; templates need not change.
