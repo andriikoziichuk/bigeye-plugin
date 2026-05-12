@@ -1,0 +1,5 @@
+name: bad_missing_tags
+version: 1
+priority: 50
+description: missing tags
+covers: [freshness]

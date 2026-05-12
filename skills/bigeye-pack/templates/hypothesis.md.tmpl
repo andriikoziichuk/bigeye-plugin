@@ -1,0 +1,20 @@
+# {{issue_type}} hypotheses — {{pack_name}}
+
+---
+id: TODO-replace-with-slug
+label: {{user_pattern_line}}
+rationale: |
+  TODO: explain when this hypothesis fires and why it's plausible.
+prior: medium
+expected_signal: |
+  TODO: describe what a confirming query result looks like.
+query_template: |
+  -- TODO: write SELECT that mirrors monitor WHERE clauses
+  SELECT 1
+  FROM {{table}}
+  WHERE {{monitor_where}}
+  LIMIT 100
+requires_widening: false
+playbook_link: |
+  TODO: what to do when this is the diagnosis. Manual verification: ...
+---

@@ -74,3 +74,50 @@ and stops without further output.
 **Pass criteria:** the recommendation block ends with `(docs unreachable — no citation)` instead of a `Source:` URL. Roster does not crash.
 
 3. Restore network on completion.
+
+## Scenario 8 — Investigator happy path
+
+### Setup
+
+1. Ensure at least one open BigEye issue exists for a Snowflake table that has recent query history in `SNOWFLAKE.ACCOUNT_USAGE.ACCESS_HISTORY` (or `INFORMATION_SCHEMA.ACCESS_HISTORY`).
+2. Confirm the MCP server is reachable (`/mcp status bigeye` shows connected).
+3. Confirm `state.json` exists (or will be created) at `~/.claude/bigeye-plugin/state.json`.
+
+### Run
+
+1. `/bigeye-investigate <issue_id>` where `<issue_id>` is the ID of the open issue identified in Setup.
+
+### Pass criteria
+
+- Skill prints a structured investigation report that includes:
+  - Issue summary (ID, metric type, table, column, breach value).
+  - Access history query result citing `INFORMATION_SCHEMA.ACCESS_HISTORY` (user list or "no recent writers found").
+  - Upstream lineage section (from `get_upstream_root_causes` or `get_lineage_graph`).
+  - A ranked root-cause hypothesis list.
+  - A recommended next action (one of: close, ticket, improve, escalate).
+- `state.json.last_investigation` is updated with the issue ID and ISO timestamp.
+- No uncaught exceptions; skill exits cleanly.
+
+### Negative
+
+- Re-run immediately for the same issue ID.
+- **Pass:** skill detects `state.json.last_investigation` matches, prints a "already investigated recently" notice, and prompts before re-running (or skips with a notice).
+
+## Scenario 9 — Investigator with subagent timeout (synthetic)
+
+### Setup
+
+1. Identify an issue ID that exists in BigEye but whose table has **no** rows in `INFORMATION_SCHEMA.ACCESS_HISTORY` for the last 7 days (or simulate by picking a table name that will return an empty result set).
+2. Set an env var `BIGEYE_INVESTIGATE_TIMEOUT_MS=500` (or equivalent config) so the access-history subagent times out quickly; if the skill does not support this env var, simply note the expected behavior and verify manually with a table known to be slow.
+
+### Run
+
+1. `/bigeye-investigate <issue_id>` using the issue from Setup.
+
+### Pass criteria
+
+- Skill does **not** crash or hang indefinitely.
+- Output contains a clearly marked `[access-history: timeout or no data]` notice (or equivalent) in place of the access-history section.
+- Upstream lineage and hypothesis sections still render (degraded-graceful mode).
+- `state.json.last_investigation` is still written with the issue ID and timestamp even when the subagent timed out.
+- Overall wall-clock time does not exceed 60 seconds for the complete run.

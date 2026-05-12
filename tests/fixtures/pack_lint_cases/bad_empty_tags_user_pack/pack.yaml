@@ -1,0 +1,6 @@
+name: bad_empty_tags_user_pack
+version: 1
+priority: 50
+description: empty tags on non-default pack
+tags: []
+covers: [freshness]
