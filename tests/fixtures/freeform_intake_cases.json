@@ -1,0 +1,83 @@
+{
+  "table_extraction": [
+    { "input": "orders look empty on PROD.ORDERS since monday", "expect_table": "PROD.ORDERS" },
+    { "input": "rows missing from DB.SCHEMA.FACT_SALES", "expect_table": "DB.SCHEMA.FACT_SALES" },
+    { "input": "lowercase schema.table should NOT match", "expect_table": null },
+    { "input": "two tables A.X and B.Y; first wins", "expect_table": "A.X" },
+    { "input": "no table here at all", "expect_table": null }
+  ],
+  "sql_extraction": [
+    {
+      "input": "ran this:\n```sql\nSELECT * FROM A.B WHERE x=1\n```\nand got 0",
+      "expect_sql": "SELECT * FROM A.B WHERE x=1"
+    },
+    {
+      "input": "ran this:\n```\nSELECT COUNT(*) FROM A.B\n```",
+      "expect_sql": "SELECT COUNT(*) FROM A.B"
+    },
+    {
+      "input": "SELECT 1 FROM dual  -- inline, no fence",
+      "expect_sql": "SELECT 1 FROM dual  -- inline, no fence"
+    },
+    {
+      "input": "no sql at all in this one",
+      "expect_sql": null
+    }
+  ],
+  "time_hint": [
+    { "input": "since 2026-05-09", "expect": "loaded_at >= '2026-05-09'" },
+    { "input": "last 7 days", "expect": "loaded_at >= DATEADD(day, -7, CURRENT_DATE)" },
+    { "input": "last 24 hours", "expect": "loaded_at >= DATEADD(hour, -24, CURRENT_TIMESTAMP())" },
+    { "input": "no time mentioned here", "expect": null }
+  ],
+  "issue_type": [
+    { "input": "table looks stale, not updated since friday", "expect": "freshness" },
+    { "input": "row count dropped, fewer rows than expected", "expect": "volume" },
+    { "input": "column is null for half the rows", "expect": "null" },
+    { "input": "distribution looks skewed, big spike yesterday", "expect": "distribution" },
+    { "input": "schema changed, new column appeared", "expect": "schema" },
+    { "input": "something feels off but I can't say what", "expect": "custom" }
+  ],
+  "parse": [
+    {
+      "input": "PROD.ORDERS rows missing for last 7 days",
+      "flags": {},
+      "expect": {
+        "table_fq": "PROD.ORDERS",
+        "monitor_where": "loaded_at >= DATEADD(day, -7, CURRENT_DATE)",
+        "issue_type": "volume",
+        "seed_sql": null
+      }
+    },
+    {
+      "input": "something is wrong with PROD.ORDERS",
+      "flags": {"table": "PROD.PAYMENTS", "since": "2026-05-09", "type": "null"},
+      "expect": {
+        "table_fq": "PROD.PAYMENTS",
+        "monitor_where": "loaded_at >= '2026-05-09'",
+        "issue_type": "null",
+        "seed_sql": null
+      }
+    },
+    {
+      "input": "PROD.ORDERS empty. ran:\n```sql\nSELECT COUNT(*) FROM PROD.ORDERS\n```",
+      "flags": {},
+      "expect": {
+        "table_fq": "PROD.ORDERS",
+        "monitor_where": null,
+        "issue_type": "volume",
+        "seed_sql": "SELECT COUNT(*) FROM PROD.ORDERS"
+      }
+    },
+    {
+      "input": "no clue what's wrong",
+      "flags": {},
+      "expect": {
+        "table_fq": null,
+        "monitor_where": null,
+        "issue_type": "custom",
+        "seed_sql": null
+      }
+    }
+  ]
+}

@@ -121,3 +121,63 @@ and stops without further output.
 - Upstream lineage and hypothesis sections still render (degraded-graceful mode).
 - `state.json.last_investigation` is still written with the issue ID and timestamp even when the subagent timed out.
 - Overall wall-clock time does not exceed 60 seconds for the complete run.
+
+## Scenario: Freeform debug — pasted prose + SQL (live)
+
+Setup: a Snowflake profile that connects, any in-scope table you can read.
+
+Run:
+
+```
+/bigeye-investigate "rows missing from <SCHEMA.TABLE> in the last 7 days. ran this:
+```sql
+SELECT COUNT(*) FROM <SCHEMA.TABLE> WHERE loaded_at >= DATEADD(day, -7, CURRENT_DATE)
+```
+"
+```
+
+Expected:
+1. Intake confirmation block shows:
+   - Table: `<SCHEMA.TABLE>`
+   - Filter: `loaded_at >= DATEADD(day, -7, CURRENT_DATE)`
+   - Issue type: `volume`
+   - Pack: `_default` (or matched pack if the table has tags)
+   - Budget: `10`
+   - Seed query: `yes (will run as query #0)`
+2. After `y`, streaming shows `[query 1/10] seed :: ...` followed by pack hypothesis queries.
+3. Memo header reads `Investigation — D-<4-hex>`.
+4. Trace table row 1 shows `_user-provided query_` in the second column.
+5. State file `~/.claude/bigeye-plugin/state.json` now has `last_freeform_investigation` set; `last_issue` is unchanged.
+6. Trace file `~/.claude/bigeye-plugin/investigations/D-<short>-<iso>.json` exists.
+
+## Scenario: Freeform debug — guard rejects pasted SQL
+
+Run:
+
+```
+/bigeye-investigate "fixing PROD.ORDERS: \n```sql\nDELETE FROM PROD.ORDERS\n```"
+```
+
+Expected:
+```
+Error: pasted SQL rejected by read-only guard: forbidden keyword 'delete'.
+Fix:   remove the write statement and re-run.
+```
+State file is untouched.
+
+## Scenario: Freeform debug — required-fields exhaustion
+
+Run:
+
+```
+/bigeye-investigate "something is broken"
+```
+
+Expected: three clarifying-question rounds. If you answer all of them blank, after round 3:
+
+```
+Error: not enough info to investigate.
+Fix:   /bigeye-investigate "<your description>" --table SCHEMA.TABLE --since 7d --type volume
+Why:   need table, time scope, and issue type to run hypotheses.
+```
+

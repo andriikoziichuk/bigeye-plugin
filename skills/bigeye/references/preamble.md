@@ -351,6 +351,17 @@ Schema:
     "diagnosis_id": "amazon-category-restructure",
     "trace_path": "investigations/10921-2026-05-12T15-42-00Z.json"
   },
+  "last_freeform_investigation": {
+    "synthetic_id": "D-7a3f",
+    "table": "SCHEMA.TABLE",
+    "request_id": "01HX...",
+    "at": "2026-05-12T20:55:00Z",
+    "confidence": "medium",
+    "pack_used": "_default",
+    "issue_type": "volume",
+    "monitor_where": "loaded_at >= '2026-05-05'",
+    "trace_path": "investigations/D-7a3f-2026-05-12T20-55-00Z.json"
+  },
   "issues": {
     "10921": {
       "internal_id": 42,
@@ -391,6 +402,7 @@ Per-skill writes (atomic skills):
 | `bigeye-ticket` | yes | — | yes — `{ skill: "bigeye-ticket", at: <iso> }` | — | |
 | `bigeye-today` | yes (last issue user picked) | — | (delegated skills already wrote) | (delegated skills already wrote) | Sets `last_workflow="today"`. |
 | `bigeye-table` | — | yes (the table) | (delegated) | (delegated) | Sets `last_workflow="table"`. |
+| `bigeye-investigate` (freeform mode) | — | — | — | — | Sets `last_freeform_investigation` only. Does NOT touch `issues[]`, `tables[]`, `last_issue`, `last_table`, or `last_workflow`. |
 
 Writes are atomic: write `state.json.tmp` in the same directory, then rename.
 
@@ -404,6 +416,7 @@ After write, if `len(issues) > 500` or `len(tables) > 100`, drop entries by olde
 - `/bigeye-coverage` with no table argument → use `state.last_table`. Empty → fall back to the existing scope-driven enumeration.
 - `/bigeye-improve` with no table argument → use `state.last_table`. Empty → ask the user.
 - `/bigeye-table` with no name → use `state.last_table`. Empty → list top 5 recent in-scope tables from `state.tables`.
+- `/bigeye-investigate` with no argument → if `last_issue` set, resume issue mode (existing). Else if `last_freeform_investigation` set, resume freeform (re-print intake, ask `Proceed? [y/n]`). Else ask the user.
 
 ### 8.E Upgrade notice (one-time)
 

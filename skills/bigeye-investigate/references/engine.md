@@ -16,19 +16,56 @@ manual_steps   : list[string] | null
 
 ## Phase 1 — Intake (no Snowflake; budget unused)
 
+Branch on `request.mode`. Default to `"issue"` when absent.
+
+### Issue mode (existing)
+
 1.1  `internal_id, display_name = BigeyeClient.resolve(request.issue_ref, request.internal_id_flag)`.
+     `# Normalize: prepend "I-" so display_name carries its prefix uniformly with freeform's "D-<short>".`
+     `display_name = f"I-{display_name}"`
      Append `{ "kind": "intake", "step": "resolve", "ok": true }`.
 1.2  `issue = BigeyeClient.get_issue(internal_id)`.
      Capture metric_type, threshold, current_value, severity, opened_at, status, priority, monitor_sql, monitor_where.
 1.3  `history = BigeyeClient.get_metric_history(internal_id, window=30)`.
      Populate `issue_snapshot.event_history` as `[{timestamp, value}, ...]` sorted ascending.
-     Render `issue_snapshot.metric_timeline` per `bigeye/references/improve.md` §1.0 (one short paragraph, absolute dates, metric's own units, no BigEye terminology). The renderer (ticket body / memo) consumes this field verbatim — do not re-derive there.
+     Render `issue_snapshot.metric_timeline` per `bigeye/references/improve.md` §1.0.
 1.4  `profile = BigeyeClient.get_table_profile(issue.table_fq)`.
-1.5  `lineage = BigeyeClient.get_lineage(issue.table_fq, max_depth=5)`. `upstream_issues = BigeyeClient.get_upstream_issues(issue.table_fq)`.
+1.5  `lineage = BigeyeClient.get_lineage(issue.table_fq, max_depth=5)`.
+     `upstream_issues = BigeyeClient.get_upstream_issues(issue.table_fq)`.
 1.6  `related = BigeyeClient.get_related_issues(internal_id, days=30)`.
-1.7  `tags_table = BigeyeClient.get_tags(issue.table_id, "table")`. `tags_source = BigeyeClient.get_tags(issue.source_id, "source")`.
+1.7  `tags_table = BigeyeClient.get_tags(issue.table_id, "table")`.
+     `tags_source = BigeyeClient.get_tags(issue.source_id, "source")`.
 
-If a step fails after one retry, append `{ "kind": "intake_failed", "step": "...", "stderr": "..." }`. If `1.1` or `1.2` fail, return early with `confidence = "low"`. Other intake failures degrade — engine continues with whatever data was fetched.
+If a step fails after one retry, append `{ "kind": "intake_failed", "step": "...", "stderr": "..." }`. If 1.1 or 1.2 fail, return early with `confidence = "low"`. Other intake failures degrade.
+
+### Freeform mode (new)
+
+1.1f  `internal_id = null; display_name = request.issue_ref`.
+      Append `{ "kind": "intake", "step": "freeform_synthesize", "ok": true }`.
+1.2f  Build `issue_snapshot` from `request.intake_facts`:
+      ```
+      metric_type   = intake_facts.issue_type
+      table_fq      = intake_facts.table_fq
+      column        = intake_facts.column
+      monitor_where = intake_facts.monitor_where
+      monitor_sql   = null
+      threshold     = null
+      current_value = null
+      severity      = null
+      priority      = null
+      status        = null
+      opened_at     = intake_facts.opened_at
+      event_history = []
+      metric_timeline = "Freeform investigation — no historical baseline."
+      ```
+1.3f  Skip metric history (`event_history = []`).
+1.4f  Skip table profile.
+1.5f  Skip lineage and upstream issues.
+1.6f  Skip related issues.
+1.7f  `tags_table = BigeyeClient.get_tags(intake_facts.table_fq, "table")` — best effort. On MCP failure append `intake_failed`, set `tags_table = []`, continue.
+      `tags_source = []`.
+
+All freeform intake is local to the engine; no BigEye issue lookups.
 
 ## Phase 2 — Pack resolve (no Snowflake; budget unused)
 
@@ -41,6 +78,34 @@ If a step fails after one retry, append `{ "kind": "intake_failed", "step": "...
 2.5  Append `{ "kind": "pack_resolve", "pack_name": pack.name, "tag_matched": "...", "hypothesis_count": len(hypotheses), "candidates": [...] }`.
 
 ## Phase 3 — Hypothesis loop (Snowflake; budget consumed)
+
+### Phase 3.0 — Seed query (freeform only)
+
+If `request.seed_query` is set AND `budget_used < budget`:
+
+```
+sql = request.seed_query.sql
+try:
+    assert_readonly(sql)
+except GuardError as e:
+    append { kind: "guard_reject", sql, reason: str(e),
+             hypothesis_id: "seed", display_label: "_user-provided query_" }
+    # budget NOT consumed; continue to Phase 3.1 with no seed
+else:
+    result = SnowClient.execute(sql, request.snow_profile)
+    budget_used += 1
+    append {
+      kind: "query", hypothesis_id: "seed",
+      display_label: "_user-provided query_",
+      sql, row_count: result.row_count, ms: result.ms,
+      result_summary: LLM_summarize(result),
+      rows_sample: result.rows[:50],
+      seed: true
+    }
+    prior_evidence_seed = result      # passed into LLM_score_evidence below
+```
+
+The seed query runs once. Its result feeds into every later `LLM_score_evidence` call as `prior_evidence_seed`. Skipping when `request.seed_query is None` is a no-op; Phase 3.1 runs as today.
 
 **Initial ranking.** For each hypothesis `h`:
 
@@ -92,8 +157,11 @@ while budget_used < budget:
         continue
     result = SnowClient.execute(sql, request.snow_profile)
     budget_used += 1
-    append { kind: "query", hypothesis_id: h.id, sql, row_count: result.row_count,
-             ms: result.ms, result_summary: LLM_summarize(result), rows_sample: result.rows[:50] }
+    append { kind: "query", hypothesis_id: h.id,
+             display_label: f"`{h.id}`",
+             sql, row_count: result.row_count,
+             ms: result.ms, result_summary: LLM_summarize(result),
+             rows_sample: result.rows[:50] }
 
     # Score
     score = LLM_score_evidence(h.expected_signal, result, h.prior_evidence)
@@ -112,6 +180,8 @@ while budget_used < budget:
         append { kind: "verification_switch", reason: "..." }
         break
 ```
+
+**`display_label` invariant.** Every `query` TraceEvent has `display_label` set. For pack hypotheses it is the hypothesis id wrapped in backticks; for the seed it is `_user-provided query_`. The renderer reads this field verbatim — no per-row conditional in the template.
 
 ## Phase 4 — Diagnose
 

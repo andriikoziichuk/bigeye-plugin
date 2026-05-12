@@ -32,6 +32,7 @@ Follow `skills/bigeye-investigate/references/engine.md` exactly. Refer to:
 - `references/contracts.md` for input/output schemas.
 - `references/adapters.md` for how to call BigEye + Snowflake (MCP-first, CLI fallback per call).
 - `references/readonly-guard.md` for the SQL guard you MUST apply before every `snow sql` call.
+- The incoming `InvestigationRequest` may set `mode: "freeform"`. Engine `Phase 1` branches on this field (see `engine.md`). Phases 2–5 are identical for both modes. You do not need additional tools — freeform intake happens in the main thread before you are dispatched.
 
 ## Rules
 

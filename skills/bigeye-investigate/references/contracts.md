@@ -21,6 +21,32 @@ Schemas exchanged between the frontend (skill), the engine (pseudocode), and ada
 }
 ```
 
+### Freeform-mode additions (optional)
+
+Set on requests built by the freeform path. Absent on issue-mode requests; engine treats absence as `mode == "issue"`.
+
+```jsonc
+{
+  // ... all existing fields ...
+  "mode": "issue" | "freeform",
+  "intake_facts": {
+    "table_fq": "SCHEMA.TABLE",
+    "column": null,
+    "monitor_where": "loaded_at >= '2026-05-05'",
+    "issue_type": "volume",
+    "time_column": "loaded_at",
+    "opened_at": "2026-05-12T20:55:00Z",
+    "user_prose": "<original input verbatim>"
+  },
+  "seed_query": {
+    "sql": "SELECT ...",
+    "source": "user-pasted"
+  }
+}
+```
+
+`intake_facts` is required when `mode == "freeform"`. `seed_query` is optional.
+
 ## InvestigationResult
 
 ```jsonc
@@ -28,7 +54,7 @@ Schemas exchanged between the frontend (skill), the engine (pseudocode), and ada
   "request": { /* InvestigationRequest verbatim */ },
   "issue_snapshot": {
     "internal_id": 42,
-    "display_name": "10921",
+    "display_name": "I-10921",
     "metric_type": "volume",
     "table_fq": "SCHEMA.TABLE",
     "column": null,
@@ -88,11 +114,17 @@ Every trace event has a `kind` field naming its variant.
 
 // kind: "query"
 { "kind": "query", "hypothesis_id": "amazon-category-restructure",
+  "display_label": "`amazon-category-restructure`",     // hydrated by engine
   "sql": "SELECT ...", "row_count": 12, "ms": 1820,
   "result_summary": "12 categories, top has 0 rows in last 7 days",
-  "rows_sample": [ { "category_id": "...", "rows": 0 } ]   // ≤ 50 rows
+  "rows_sample": [ { "category_id": "...", "rows": 0 } ],
+  "seed": false                                          // true only for seed query
 }
+```
 
+`display_label` is rendered verbatim in the memo trace table. For pack hypotheses the engine sets it to `` `<hypothesis_id>` `` (backtick-wrapped). For the seed query the engine sets it to `_user-provided query_`. Older trace files written before this field existed are rendered by falling back to `hypothesis_id`.
+
+```jsonc
 // kind: "skipped"
 { "kind": "skipped", "hypothesis_id": "...", "reason": "widened row count exceeds threshold" }
 
