@@ -21,6 +21,8 @@ manual_steps   : list[string] | null
 1.2  `issue = BigeyeClient.get_issue(internal_id)`.
      Capture metric_type, threshold, current_value, severity, opened_at, status, priority, monitor_sql, monitor_where.
 1.3  `history = BigeyeClient.get_metric_history(internal_id, window=30)`.
+     Populate `issue_snapshot.event_history` as `[{timestamp, value}, ...]` sorted ascending.
+     Render `issue_snapshot.metric_timeline` per `bigeye/references/improve.md` §1.0 (one short paragraph, absolute dates, metric's own units, no BigEye terminology). The renderer (ticket body / memo) consumes this field verbatim — do not re-derive there.
 1.4  `profile = BigeyeClient.get_table_profile(issue.table_fq)`.
 1.5  `lineage = BigeyeClient.get_lineage(issue.table_fq, max_depth=5)`. `upstream_issues = BigeyeClient.get_upstream_issues(issue.table_fq)`.
 1.6  `related = BigeyeClient.get_related_issues(internal_id, days=30)`.

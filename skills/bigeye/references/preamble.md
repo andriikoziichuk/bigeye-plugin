@@ -156,7 +156,7 @@ For CLI fallback (hidden skills only) see "CLI fallback" at the bottom of this f
 
 Once per skill run, after Step 3:
 
-1. Call `mcp__bigeye__list_data_sources` with `workspace_id: {profile's workspace_id}`.
+1. Call `mcp__bigeye__list_issues` with `workspace_id: {profile's workspace_id}`, `page_size: 1`. (Do **not** use `list_data_sources` — that endpoint returns 404 in the current MCP build and is not a reliable health probe.)
 2. On success: set `MCP_AVAILABLE=true`, discard the result.
 3. On any error: set `MCP_AVAILABLE=false`, remember the error text.
 
@@ -169,7 +169,7 @@ When `/bigeye-config verify` runs its health check, it produces a numbered check
 1. CLI installed — `which bigeye`.
 2. CLI workspace configured — active profile's `workspace_id` in `~/.bigeye/config.ini`.
 3. CLI auth — `~/.bigeye/credentials` readable.
-4. MCP reachability — `mcp__bigeye__list_data_sources` probe (this Step).
+4. MCP reachability — `mcp__bigeye__list_issues` probe (`page_size: 1`, this Step). Do not use `list_data_sources` (404 in current MCP build).
 5. Snowflake — run `/bigeye-config snow verify` and condense to one line:
    `✓ snow profile=<profile>, role=<role> (read-only ✓)` on PASS.
    `⚠ snow profile=<profile>, role=<role> (write grants detected)` on WARN.
