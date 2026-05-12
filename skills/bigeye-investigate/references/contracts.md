@@ -41,7 +41,12 @@ Schemas exchanged between the frontend (skill), the engine (pseudocode), and ada
     "status": "NEW",
     "priority": "P2",
     "tags_table": ["sov"],
-    "tags_source": []
+    "tags_source": [],
+    "event_history": [
+      { "timestamp": "2026-05-04T08:00:00Z", "value": 1100 },
+      { "timestamp": "2026-05-11T08:00:00Z", "value": 312 }
+    ],
+    "metric_timeline": "From May 4 the row count fell from ~1,100 to 312 by May 11 and has stayed depressed since."
   },
   "pack_used": "sov",
   "trace": [ /* list of TraceEvent — see TraceEvent below */ ],

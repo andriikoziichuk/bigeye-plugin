@@ -60,7 +60,7 @@ Global flags — see `output.md`.
 
    Apply preamble Step 1.E filtering to MCP calls (downstream/related items kept only when in scope; primary issue itself unscoped per Step 5).
 
-6. Render `{{sample_query}}` per `improve.md` §1.1 from the metric type.
+6. Render `{{sample_query}}` per `improve.md` §1.1 from the metric type. Render `{{metric_timeline}}` per `improve.md` §1.0 from the CLI `events[]` array (no MCP needed).
 
 7. Load the template body from `~/.claude/bigeye-plugin/ticket-templates/<name>.md` (default if `--template` not given). On I/O error, follow §Errors below.
 

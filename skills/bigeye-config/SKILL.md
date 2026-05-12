@@ -351,7 +351,7 @@ Check steps:
 - **a**: run `which bigeye`. If non-zero, mark `[✗]` and suggest `bigeye-cli-install.md`.
 - **b**: read the resolved profile's `workspace_id`, confirm `[<profile>]` exists in `~/.bigeye/config.ini` with that value. Mismatch → `[!]`.
 - **c**: `test -r ~/.bigeye/credentials`. Absent → `[!]`, point at `bigeye configure`.
-- **d**: call `mcp__bigeye__list_data_sources` with `workspace_id`. On success, list the features MCP unlocks. On failure, mark `[!]` and point at `bigeye-mcp-install.md`.
+- **d**: call `mcp__bigeye__list_issues` with `workspace_id`, `page_size: 1` (do **not** use `list_data_sources` — that endpoint returns 404 in the current MCP build). On success, list the features MCP unlocks. On failure, mark `[!]` and point at `bigeye-mcp-install.md`.
 - **e**: `test -r ~/.claude/bigeye-plugin/settings.json`. Absent → `[!]` and note that running any other BigEye command will seed it.
 
 Always exit printing the table. Never fail the session.
@@ -362,7 +362,7 @@ Hard-fail if `MCP_AVAILABLE=false`. (The wizard depends on MCP for name → ID r
 
 Ask one question at a time. Show the running summary after each answer.
 
-1. **Workspace ID.** Ask: `What's your BigEye workspace_id? (integer)`. Validate integer; confirm reachability via `mcp__bigeye__list_data_sources`.
+1. **Workspace ID.** Ask: `What's your BigEye workspace_id? (integer)`. Validate integer; confirm reachability via `mcp__bigeye__list_issues` (`page_size: 1`).
 2. **Data sources.** Ask: `Filter by data source? (y/n)`. On yes: list available via MCP; user picks indices. Save resolved `[{id, name}]` to `scope.data_sources`.
 3. **Schemas.** Ask: `Filter by schema? (y/n)`. On yes: per data source, list available via MCP; user picks. Save `[{id, name}]`.
 4. **Tables.** Ask: `Filter by tables? (y/n)`. On yes: ask for one name per line. For each: MCP-resolve. On ambiguity → list candidates with IDs, user picks. On no match → warn, skip. Save `[{id, name}]` in `scope.tables`.

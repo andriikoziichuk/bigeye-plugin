@@ -33,6 +33,7 @@ Used by `bigeye-ticket`. All variables are substituted in a single pass using Mu
 | `{{expected_value}}` | CLI issue JSON `events[0].expected` | no |
 | `{{actual_value}}` | CLI issue JSON `events[0].actual` | no |
 | `{{event_history}}` | Markdown bullet list rendered from `events[]` (one bullet per event: `- {timestamp} — {metric_value}`) | no |
+| `{{metric_timeline}}` | One-paragraph plain-language narrative describing how the metric value changed across `events[]`. See §1.0. | no |
 | `{{bigeye_url}}` | `https://app.bigeye.com/issue/{{issue_internal_id}}` | no |
 | `{{sample_query}}` | Heuristic SQL skeleton based on metric type (§1.1) | no |
 | `{{downstream_tables}}` | MCP `get_issue_lineage_trace` → formatted bullet list of affected tables | **yes** |
@@ -40,6 +41,22 @@ Used by `bigeye-ticket`. All variables are substituted in a single pass using Mu
 | `{{resolution_steps}}` | MCP `get_resolution_steps` → numbered list | **yes** |
 
 Deliberately **not** in the catalog: `{{severity}}`. See §5.
+
+### §1.0 `{{metric_timeline}}` rendering rules
+
+A plain-English description of how the monitored metric moved over time. Source: CLI issue JSON `events[]` (each entry has `timestamp` and `metricValue` or equivalent). Rules:
+
+1. Sort `events[]` by timestamp ascending.
+2. Identify the first failing event (`opened_at`) and the most recent event.
+3. Detect direction: rising, falling, flat, or oscillating. Compute the largest jump between consecutive events.
+4. Format as one short paragraph (1–3 sentences), no bullets, no metric IDs, no BigEye terminology. Use absolute dates (e.g. `April 4`), not relative phrases. Express values as the metric reports them — percentages with `%`, counts as integers, ratios with 2 decimals.
+
+Examples (template will render text like this):
+- `From April 4 the value rose sharply from 3% to 100% and has held there through May 12.`
+- `The row count dropped from ~1.2M to 0 on May 9 and has stayed at zero since.`
+- `Freshness lag grew from 2h to 27h over April 18–22 and has fluctuated between 18h and 30h since.`
+
+If `events[]` has fewer than 2 entries, render: `Only one observation recorded ({{opened_at}}, value {{actual_value}}).`
 
 ### §1.1 `{{sample_query}}` rendering rules
 
