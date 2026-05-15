@@ -2,12 +2,10 @@
 
 How to install the Snowflake CLI and configure a connection.
 
-## Install
+## 1. Install
 
 ```bash
 brew install snowflake-cli
-# or
-pipx install snowflake-cli-labs
 ```
 
 Verify:
@@ -16,38 +14,48 @@ Verify:
 snow --version
 ```
 
-## Add a connection
+(Alternative: `pipx install snowflake-cli-labs` if not on macOS / Homebrew.)
 
-Interactive:
+## 2. Grab account identifier + username from the Snowflake UI
 
-```bash
-snow connection add
+Log in to your Snowflake account in the browser. From the URL grab the account identifier:
+
+```
+https://<org>-<account>.snowflakecomputing.com
+                ^^^^^^^^^^^^^^^^^
+                account identifier  →  e.g. myorg-myacct
 ```
 
-Prompts:
+Also note:
 
-- **Connection name** — alias (e.g. `dev`)
-- **Account** — `<orgname>-<accountname>` (from Snowflake URL: `https://<org>-<acct>.snowflakecomputing.com`)
-- **User** — Snowflake username
-- **Password** — skip if using SSO or key-pair
-- **Role** — e.g. `SYSADMIN`
-- **Warehouse** — e.g. `COMPUTE_WH`
-- **Database** / **Schema** — optional defaults
-- **Authenticator** — `snowflake` (password), `externalbrowser` (SSO), `SNOWFLAKE_JWT` (key-pair)
+- **Username** — top-right user menu → account name
+- **Role** (optional) — e.g. `SYSADMIN`, `ANALYST`
+- **Warehouse** (optional) — e.g. `COMPUTE_WH`
+- **Database** / **Schema** (optional defaults)
 
-Non-interactive:
+## 3. Ask Claude to set up the SSO connection
+
+Tell Claude:
+
+> Add a Snowflake CLI connection named `dev` using SSO (`externalbrowser`). Account `<org>-<account>`, user `<username>`, role `<ROLE>`, warehouse `<WH>`, database `<DB>`. Then set it as default and test it.
+
+Claude will run:
 
 ```bash
 snow connection add \
   --connection-name dev \
-  --account myorg-myacct \
-  --user andrii \
-  --role SYSADMIN \
-  --warehouse COMPUTE_WH \
-  --database ANALYTICS \
-  --schema PUBLIC \
+  --account <org>-<account> \
+  --user <username> \
+  --role <ROLE> \
+  --warehouse <WH> \
+  --database <DB> \
   --authenticator externalbrowser
+
+snow connection set-default dev
+snow connection test -c dev
 ```
+
+First `test` opens your browser to your IdP. Approve, return to terminal. Expect `Status: OK`.
 
 ## Config file
 
@@ -107,19 +115,6 @@ private_key_path = "/Users/andriik-mbp/.snowflake/rsa_key.p8"
 ```toml
 authenticator = "snowflake"
 password = "..."   # or use env var SNOWFLAKE_PASSWORD
-```
-
-## Set default and test
-
-```bash
-snow connection set-default dev
-snow connection test -c dev
-```
-
-Expected output:
-
-```
-Status: OK
 ```
 
 ## Use the connection
